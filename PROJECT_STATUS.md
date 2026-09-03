@@ -4,87 +4,90 @@ Last updated: 2026-09-03
 
 ## Current phase
 
-Milestone 0 — repository and engineering foundations, with the first recognisable Milestone 1 capture slice in progress.
+Milestone 0 foundations are merged. Milestone 1 now has a server-owned capture
+contract, but production persistence remains safely disabled until its
+infrastructure is provisioned.
 
-- Branch: `codex/foundations`
-- Current PR: none
+- Branch: `codex/item-persistence`
+- Current PR: not yet opened
 - Current production version: not deployed
-- Last known-good commit: `f61ac1b` (local test/typecheck/lint/build gate passed; container runtime remains unverified)
+- Last known-good `main`: `40966a2` (merged Gitea PR #1)
 
 ## In progress
 
-- [ ] Establish the application foundation
-  - [x] Read `BRIEF.md` and current Overseer operator documentation/source
-  - [x] Scaffold responsive web application with the approved Sites toolchain
-  - [x] Create intentional light/dark design tokens
-  - [x] Build functional multi-photo intake preview
-  - [x] Add initial capture-policy unit tests
-  - [x] Add Docker/Overseer delivery configuration
-  - [x] Add Gitea CI workflow
-  - [ ] Verify Gitea runner secrets and production container build
-  - [ ] Open PR and establish branch protection
+- [ ] Complete Milestone 0 deployment foundations
+  - [x] Responsive application, design tokens and multi-photo capture UI
+  - [x] Standard self-hosted Next.js Node runtime and standalone image
+  - [x] Docker/Overseer manifest and Gitea workflow
+  - [x] Gitea PR #1 merged to `main`
+  - [ ] Configure registry Actions secrets and verify the workflow/container
+  - [ ] Create and approve the first Overseer container, DNS and proxy proposals
 - [ ] Milestone 1 vertical slice: photo → draft item
   - [x] Camera/file picker, multiple images, drag/drop and clipboard input
-  - [x] Local image preview/removal and success state
-  - [ ] Server-owned item record and image storage
-  - [ ] Durable background job
-  - [ ] Real vision provider adapter and schema validation
+  - [x] PostgreSQL item/photo/job schema and generated migration
+  - [x] Byte-verified HEIC/JPEG/PNG upload with size/count limits
+  - [x] Durable object-store boundary and compensating cleanup
+  - [x] Atomic item metadata plus idempotent `inspect_images` job creation
+  - [x] Feature-gated API wired to truthful UI success/error states
+  - [ ] Provision and integration-test PostgreSQL plus durable upload storage
+  - [ ] Implement the worker and real vision-provider adapter
   - [ ] Research stage and evidence model
 
 ## Blocked
 
 - [ ] First infrastructure deployment
-  - Blocker: deployment would mutate real infrastructure and must be proposed, approved and executed through Overseer.
-  - Next action: finish the container and manifest, then create the three first-deploy proposals.
+  - Blocker: Overseer must propose and apply real PostgreSQL, storage, container,
+    DNS and reverse-proxy changes; no reusable database/object service was found.
+  - Next action: prepare the exact Overseer proposals and migration procedure.
 
 ## Next up
 
-- [ ] Add the server-side item/photo schema and migrations.
-- [ ] Decide the production identity boundary after checking existing trusted-device conventions.
-- [ ] Implement durable image upload and a resumable `inspect_images` job.
-- [ ] Research current eBay API and authenticated browser capabilities; write strategy ADRs.
-  - [x] Initial official-source API/Product Research reconnaissance
-  - [x] Authenticated Seller Hub, Product Research and Sold/Completed inspection
-  - [ ] Sandbox/API publication proof
+- [ ] Provision isolated PostgreSQL and a backed-up upload volume through Overseer.
+- [ ] Run the migration and real database/filesystem integration test.
+- [ ] Enable `CAPTURE_API_ENABLED` only after both dependencies are healthy.
+- [ ] Implement resumable `inspect_images` job claiming and retries.
+- [ ] Add the vision adapter, schema validation and evidence/confidence records.
+- [ ] Decide the production identity boundary after checking trusted-device conventions.
 - [ ] Add component, accessibility and mobile E2E coverage for capture.
 
 ## Recently completed
 
-- [x] Confirmed the existing Gitea authority (`origin`) and GitHub mirror (`github`) both point to this repository.
-- [x] Confirmed Overseer is running persistently and provides Gitea CI, immutable image delivery, deployment proposals, DNS and NPM provisioning.
-- [x] Started work on short-lived branch `codex/foundations`.
-- [x] Opened the first meaningful local preview.
-- [x] Added a branded social preview and site metadata.
-- [x] Completed initial official-source eBay capability research.
-- [x] Confirmed authenticated UK Product Research access and compared it with Sold/Completed search.
-- [x] Pushed `codex/foundations` to the authoritative Gitea remote.
+- [x] Merged foundations PR #1 at `40966a2`.
+- [x] Replaced the Cloudflare-oriented prototype runtime with standard Next.js
+      self-hosting so the app can use Postgres and durable local storage.
+- [x] Added Drizzle schema and migration for items, photos and jobs.
+- [x] Added upload validation based on file signatures, not user-supplied names.
+- [x] Added unit and API contract coverage for storage, rollback and feature gates.
+- [x] Recorded the first storage decision in accepted ADR 0002.
+- [x] Completed official-source and authenticated eBay research reconnaissance.
 
 ## Known bugs
 
-- [ ] Uploaded photos exist only in browser memory and disappear on refresh; the UI clearly remains a prototype until server persistence lands.
-- [ ] Navigation and sample task rows are illustrative and not yet wired to routes.
+- [ ] Production capture returns a clear 503 until persistence infrastructure is ready.
+- [ ] Navigation, metrics and sample task rows are illustrative and not API-backed.
 - [ ] WebMCP registration is feature-detected but not contract-tested in a supported host.
 
 ## Technical debt
 
-- [ ] The initial Vinext UI scaffold is Cloudflare-oriented; production runtime fit must be confirmed before cementing the container boundary.
-- [ ] Add object URL cleanup for page unmount as well as explicit removal/reset.
+- [ ] Add orphan-object reconciliation for failures outside the compensated write path.
+- [x] Revoke browser object URLs on removal, reset and page unmount.
 - [ ] Replace illustrative queue data with API-backed records.
-- [ ] Resolve reported dependency audit findings without forced breaking upgrades.
+- [ ] Resolve dependency audit findings without forced breaking upgrades.
 
 ## Test status
 
 - Build: passing (`npm run build`, 2026-09-03)
-- Unit tests: 3 passing (`npm test`, 2026-09-03)
+- Unit/API contract tests: 11 passing (`npm test`, 2026-09-03)
 - Typecheck/lint: passing (`npm run typecheck`, `npm run lint`, 2026-09-03)
-- Component/integration/E2E/accessibility/visual: not yet established
+- PostgreSQL/filesystem integration, component, accessibility, visual and E2E: pending
 
 ## Deployment status
 
-- Local preview: running on `http://localhost:3000/`
+- Local preview: `http://localhost:3000/`
 - Production: not deployed
-- Intended hostname: `sell.26fe.uk` (with a LAN-direct `.internal` route to be selected by Overseer)
-- Overseer manifest/proposals: pending
-- Rollback: initial deployment not yet created
-- Container verification: blocked locally because the Docker/OrbStack daemon is not running; CI will run the same Dockerfile gate.
-- Gitea readiness: no branch protection rule and no repository Actions secrets currently exist; both must be configured before merging.
+- Intended hostname: `sell.26fe.uk`
+- Capture API in manifest: disabled
+- Overseer manifest/proposals: infrastructure proposals pending
+- Container verification: local Docker/OrbStack daemon unavailable; CI remains unverified
+- Gitea Actions: enabled, with no repository secrets and no recorded run after PR #1
+- Branch protection: intentionally not required per project owner

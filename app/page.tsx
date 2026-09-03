@@ -9,6 +9,7 @@ import {
   CircleHelp,
   Clock3,
   ImagePlus,
+  LoaderCircle,
   Menu,
   PackageCheck,
   Search,
@@ -22,7 +23,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { isSupportedImage } from '@/lib/capture-policy';
 
-type Photo = { id: string; name: string; url: string };
+type Photo = { id: string; name: string; url: string; file: File };
 
 const queue = [
   {
@@ -50,9 +51,12 @@ const queue = [
 
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const photosRef = useRef<Photo[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [dragging, setDragging] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string>();
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const next = Array.from(files)
@@ -61,12 +65,25 @@ export default function Home() {
         id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
         name: file.name,
         url: URL.createObjectURL(file),
+        file,
       }));
     if (next.length) {
       setPhotos((current) => [...current, ...next]);
       setSubmitted(false);
+      setUploadError(undefined);
     }
   }, []);
+
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
+
+  useEffect(
+    () => () => {
+      photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.url));
+    },
+    [],
+  );
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
@@ -121,6 +138,32 @@ export default function Home() {
     setPhotos((current) =>
       current.filter((candidate) => candidate.id !== photo.id),
     );
+    setUploadError(undefined);
+  };
+
+  const submitPhotos = async () => {
+    setUploading(true);
+    setUploadError(undefined);
+    try {
+      const form = new FormData();
+      photos.forEach((photo) => form.append('photos', photo.file));
+      const response = await fetch('/api/items', {
+        method: 'POST',
+        body: form,
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok)
+        throw new Error(result.error ?? 'The photos could not be saved');
+      setSubmitted(true);
+    } catch (error) {
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : 'The photos could not be saved. Please try again.',
+      );
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -222,9 +265,10 @@ export default function Home() {
               accept="image/jpeg,image/png,image/heic,image/heif"
               capture="environment"
               multiple
-              onChange={(event) =>
-                event.target.files && addFiles(event.target.files)
-              }
+              onChange={(event) => {
+                if (event.target.files) addFiles(event.target.files);
+                event.target.value = '';
+              }}
               aria-label="Choose photographs"
             />
 
@@ -287,6 +331,7 @@ export default function Home() {
                     photos.forEach((photo) => URL.revokeObjectURL(photo.url));
                     setPhotos([]);
                     setSubmitted(false);
+                    setUploadError(undefined);
                   }}
                 >
                   Photograph another item <Camera data-icon="inline-end" />
@@ -347,10 +392,31 @@ export default function Home() {
                 </div>
                 <Button
                   className="mt-4 h-12 w-full rounded-2xl text-[15px] shadow-[0_12px_28px_rgba(32,70,58,.18)]"
-                  onClick={() => setSubmitted(true)}
+                  onClick={submitPhotos}
+                  disabled={uploading}
                 >
-                  Start investigating <Sparkles data-icon="inline-end" />
+                  {uploading ? (
+                    <>
+                      Saving photos{' '}
+                      <LoaderCircle
+                        className="animate-spin"
+                        data-icon="inline-end"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      Start investigating <Sparkles data-icon="inline-end" />
+                    </>
+                  )}
                 </Button>
+                {uploadError ? (
+                  <p
+                    className="mt-3 text-center text-sm font-medium text-destructive"
+                    role="alert"
+                  >
+                    {uploadError}
+                  </p>
+                ) : null}
               </div>
             )}
           </div>

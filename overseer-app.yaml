@@ -10,6 +10,7 @@ container:
   healthCheckPath: /api/healthz
   env:
     APP_ORIGIN: https://sell.26fe.uk
+    CAPTURE_API_ENABLED: 'false'
 
 network:
   hostname: sell
