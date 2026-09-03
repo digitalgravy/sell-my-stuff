@@ -1,0 +1,12 @@
+.git
+.gitea
+.openai
+.wrangler
+dist
+node_modules
+npm-debug.log*
+.env*
+data
+coverage
+playwright-report
+test-results

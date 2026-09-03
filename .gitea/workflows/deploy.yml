@@ -1,0 +1,39 @@
+name: Build, test, and propose deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  IMAGE_REPOSITORY: gitea.internal:3000/overseer-bot/sell-my-stuff
+  OVERSEER_CLI_IMAGE: gitea.internal:3000/overseer-bot/overseer-core:latest
+
+jobs:
+  build-test-propose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run quality gates
+        run: docker build -t "$IMAGE_REPOSITORY:${{ gitea.sha }}" .
+
+      - name: Push image
+        run: |
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login gitea.internal:3000 -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+          docker push "$IMAGE_REPOSITORY:${{ gitea.sha }}"
+
+      - name: Propose deploy through Overseer
+        run: |
+          docker run --rm --pull always \
+            -v overseer-data:/app/data \
+            -v overseer-bootstrap:/run/overseer-bootstrap:ro \
+            -e IMAGE_REF="$IMAGE_REPOSITORY:${{ gitea.sha }}" \
+            -e DEPLOY_REASON="CI build ${{ gitea.sha }}" \
+            -e MANIFEST_B64="$(base64 < overseer-app.yaml | tr -d '\n')" \
+            "$OVERSEER_CLI_IMAGE" \
+            sh -c 'echo "$MANIFEST_B64" | base64 -d > /tmp/overseer-app.yaml && node --import tsx src/cli/index.ts propose-deploy /tmp/overseer-app.yaml \
+              --image "$IMAGE_REF" \
+              --portainer-adapter portainer-ci \
+              --unifi-adapter unifi-ci \
+              --npm-adapter nginx-proxy-manager-ci \
+              --reason "$DEPLOY_REASON"'

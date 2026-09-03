@@ -1,0 +1,24 @@
+version: 1
+project: sell-my-stuff
+environment: prod
+
+image:
+  repository: gitea.internal:3000/overseer-bot/sell-my-stuff
+
+container:
+  port: 3000
+  healthCheckPath: /api/healthz
+  env:
+    APP_ORIGIN: https://sell.26fe.uk
+
+network:
+  hostname: sell
+  exposeExternally: false
+
+ownership:
+  sourceRepo: stue/sell-my-stuff
+  backupClass: application
+  dataCriticality: medium
+
+deploy:
+  autoApproveRedeploy: false
