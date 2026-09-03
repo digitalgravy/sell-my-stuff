@@ -4,45 +4,64 @@ Last updated: 2026-09-03
 
 ## Project
 
-Sell My Stuff is a self-hosted, mobile-first AI selling assistant. The core experience is photographs → autonomous identification/research → only necessary questions → a complete proposal → explicit approval → verified external action. Read `BRIEF.md` before changing scope.
+Sell My Stuff is a self-hosted, mobile-first AI selling assistant. The core
+experience is photographs → autonomous identification/research → only necessary
+questions → a complete proposal → explicit approval → verified external action.
+Read `BRIEF.md` before changing scope.
 
 ## Current state
 
-- Branch: `codex/foundations`, pushed to Gitea; PR form is drafted in the browser but not submitted.
-- `origin` is the authoritative Gitea repo: `gitea@git.26fe.uk:stue/sell-my-stuff.git`.
-- `github` is the GitHub mirror: `git@github.com:digitalgravy/sell-my-stuff.git`.
-- Both remotes currently have `main` at `3e4cd5e`.
-- A Vinext/React/Tailwind/shadcn scaffold is installed.
-- `app/page.tsx` is a functional local multi-photo intake prototype (picker/camera hint, drop, paste, preview, remove, submit success) with representative action/research cards.
-- `app/globals.css` contains the initial warm-ivory/evergreen/copper light and dark design tokens.
-- `public/og.png` is the generated social card and is wired through trusted-origin metadata.
-- `Dockerfile`, `overseer-app.yaml`, and `.gitea/workflows/deploy.yml` establish the intended delivery path, but the local Docker daemon was unavailable for an image build.
-- Nothing is deployed; no database, object storage, worker or external AI call exists yet.
+- Gitea PR #1 is merged. `main` is known-good at `40966a2`.
+- Active branch: `codex/item-persistence`; PR not yet opened.
+- `origin` is authoritative Gitea; `github` is the GitHub mirror.
+- The app now uses standard Next.js 16 Node self-hosting with standalone output,
+  not the initial Cloudflare/Vinext prototype runtime.
+- The capture UI POSTs its actual files to `POST /api/items` and only shows a
+  queued success state after a 201 response.
+- `db/schema.ts` and `drizzle/0000_equal_swarm.sql` define the initial item,
+  photo and durable-job records with revisions and idempotency.
+- Uploads are signature-verified, bounded to 12 photos / 25 MB each / 150 MB
+  total, written through an object-store adapter, and cleaned up if the database
+  transaction fails.
+- The first object-store implementation writes to `SELL_STORAGE_PATH`.
+- Production capture remains intentionally disabled with
+  `CAPTURE_API_ENABLED=false`; no database or upload volume exists yet.
+- Nothing is deployed.
 
 ## Architecture direction
 
-Use a modular monolith for the web/API first, plus a separate durable worker and later a separately secured Browser Operator. The server is authoritative. PostgreSQL is the preferred structured store and an S3-compatible object store is preferred for images, but deployment availability must be verified before marking ADR 0002 accepted. All external systems sit behind adapters. Consequential operations use prepare → exact approval → execute → verify → audit.
+Use a modular monolith for web/API first, a durable worker using the same
+database-backed job contract, and later a separately secured Browser Operator.
+PostgreSQL is authoritative structured storage. Originals initially use a
+dedicated durable filesystem volume behind an adapter; S3-compatible storage can
+replace it when needed. Consequential operations always follow prepare → approve
+exact proposal → execute → verify → audit.
 
 See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
 
 ## Overseer facts
 
-- Local Overseer repo: `../overseer`; current `main` was `e9a6f5f` when inspected.
-- Persistent `overseer-core` runs at `192.168.5.80`, MCP at `http://overseer.internal:3900/mcp`, bearer-token authenticated.
-- Do not commit an MCP token or project-scoped MCP config.
-- Overseer owns first deploy via three proposals: container, UniFi DNS, NPM proxy. Human approval is required.
-- Gitea Actions builds/tests/pushes immutable images and can only propose deployment using `-ci` adapters.
+- Local Overseer repo: `../overseer`; inspected `main` was `e9a6f5f`.
+- Persistent `overseer-core` MCP is at `http://overseer.internal:3900/mcp` and
+  bearer-token authenticated. Never commit its token or project MCP config.
+- Gitea Actions builds/tests/pushes immutable images and can propose deployment
+  with `-ci` adapters; Overseer owns infrastructure mutation.
+- First app deployment needs separate container, UniFi DNS and NPM proposals.
 - Production apps run on `docker.26fe.uk`; registry is `gitea.internal:3000`.
-- Secrets are SOPS+age encrypted in a separate private repository for the deployed Overseer runtime. Application secrets should be referenced from `overseer-app.yaml`, never committed.
-- Validate monitoring checks against real data before enabling notifications; Overseer previously had a notification flood from an unreviewed check.
-- The desired public name is `sell.26fe.uk`; local routing and IP/port must be allocated through Overseer, not guessed into infrastructure.
+- Secrets live SOPS+age encrypted outside this repository.
+- Live inventory contained no PostgreSQL, Redis, MinIO or other object service
+  suitable for reuse, so persistence requires new proposals.
 
 ## Exact next action
 
-1. Build the Docker image on a host with a running daemon and verify `/api/healthz` from the container.
-2. Configure the missing Gitea registry Actions secrets through an approved mechanism, add a `main` branch protection rule, and submit the prepared PR.
-3. Start the first server-owned vertical slice: item/photo schema + migration + durable upload API + `inspect_images` job contract.
-4. Begin authenticated eBay UK inspection; pause for user login/MFA if required.
+1. Finish and merge the item-persistence PR after the full quality gate.
+2. Use Overseer to prepare PostgreSQL, durable-volume and first-deploy proposals;
+   do not guess addresses, ports or secret values.
+3. Apply the Drizzle migration, configure `DATABASE_URL` and
+   `SELL_STORAGE_PATH`, and perform a real capture/restart/restore test.
+4. Only then set `CAPTURE_API_ENABLED=true` through a reviewed deploy proposal.
+5. Implement idempotent `inspect_images` claiming/retry behavior and the first
+   schema-validated vision adapter.
 
 ## Commands
 
@@ -53,29 +72,35 @@ npm test
 npm run typecheck
 npm run lint
 npm run build
+npm run db:generate
+npm run db:migrate
 ```
 
 ## Environment assumptions
 
 - Node `>=22.13.0`.
-- Development is on macOS; the local preview uses port 3000.
-- Production will be a container managed by Overseer/Portainer on the existing VLAN 5 network.
+- Development is macOS; the preview uses port 3000.
+- Production is a container managed by Overseer/Portainer on VLAN 5.
+- Durable capture additionally requires `DATABASE_URL`, `SELL_STORAGE_PATH` and
+  `CAPTURE_API_ENABLED=true`.
 - No credentials or authenticated browser state are present in this repo.
 
 ## External integration state
 
-- eBay research: official-source pass plus authenticated Seller Hub, Product Research and Sold/Completed inspection complete in `docs/research/ebay-capabilities-2026-09-03.md`.
-- Authenticated eBay session: available in the user's Chrome profile on 2026-09-03; no credentials/session material stored. Seller Hub reports account-detail updates are required before listing again.
+- eBay capability research and authenticated Seller Hub inspection are recorded
+  in `docs/research/ebay-capabilities-2026-09-03.md`.
+- Seller Hub reported that account details need updating before listing again.
 - Browser Operator: architecture only, no implementation/profile.
-- AI providers: none configured.
-- Marketplace, carrier and packaging adapters: none implemented.
+- AI, marketplace, carrier and packaging adapters: not implemented.
 
 ## Known traps
 
-- The repository was already created on both remotes before this session; do not create a duplicate via `overseer new-project`.
-- `overseer-core`'s network MCP is plain HTTP on the LAN today. Never embed its bearer token in source, logs or `.mcp.json`.
-- Do not infer production storage or allocate addresses without live Overseer evidence.
-- The current upload success is presentation-only; do not describe it as durable or cross-device.
-- Do not run `npm audit fix --force`; audit findings require deliberate compatible upgrades.
-- The local Docker daemon was unavailable on 2026-09-03, so the Dockerfile has not yet been built end-to-end.
-- Gitea repository settings were inspected: `main` has no protection rule and repository Actions has no secrets. Changing either is a separate privileged action.
+- Do not create a duplicate repo via `overseer new-project`.
+- Do not enable capture before both the migration and durable volume are proven.
+- Do not put uploads on the container's ephemeral writable layer.
+- Do not embed Overseer tokens, database URLs or browser state in source/logs.
+- The local Docker daemon was unavailable on 2026-09-03.
+- Gitea Actions has no repository secrets, so image push/proposal cannot succeed
+  until credentials are configured through an approved mechanism.
+- Branch protection is intentionally unnecessary per the project owner; PR review
+  and passing local/CI evidence still remain the merge standard.

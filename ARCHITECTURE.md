@@ -8,7 +8,7 @@ The first production shape is a modular monolith with explicit boundaries:
 - Application API: server-owned items, evidence, approvals and revision control.
 - Worker: durable, idempotent research stages and retries.
 - PostgreSQL: authoritative structured state and job metadata.
-- S3-compatible object storage: originals, derivatives and listing photos.
+- Object storage adapter: an isolated durable filesystem volume first, with an S3-compatible implementation available when operating needs justify it.
 - Browser Operator: a later, separately deployed service with a persistent profile and exclusive control states.
 - Adapters: AI, marketplace, manufacturer research, carrier and supplier boundaries.
 
@@ -24,3 +24,12 @@ This keeps Milestone 1 deployable without prematurely operating a fleet of servi
 - Records carry revisions; stale writes fail rather than overwrite silently.
 
 See `docs/adr/` for decisions and open questions.
+
+## First persistence slice
+
+`POST /api/items` validates image bytes rather than trusting filenames, writes
+originals through the object-store boundary, then atomically creates the item,
+photo metadata and one idempotent `inspect_images` job in PostgreSQL. If the
+database transaction fails, newly written objects are removed. The endpoint is
+gated by `CAPTURE_API_ENABLED` until Overseer has provisioned both dependencies
+and the migration has been applied.

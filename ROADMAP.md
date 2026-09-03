@@ -6,6 +6,8 @@ This roadmap preserves completed history. Items move between sections as evidenc
 
 - [ ] Milestone 0: complete repository, CI, documentation, security and Overseer deployment foundations.
 - [ ] Milestone 1: deliver a real photo-to-draft vertical slice with durable server state.
+- [x] Define the PostgreSQL item/photo/job schema, migration and feature-gated upload contract.
+- [ ] Provision PostgreSQL and durable upload storage through Overseer, then enable and integration-test capture.
 - [ ] Establish mobile capture quality: multi-photo, HEIC, drag/drop, clipboard, retries and clear progress.
 - [ ] Establish the evidence/confidence model before any AI-generated fact reaches a listing.
 - [ ] Research current eBay API and authenticated UI capabilities; record research and publishing ADRs.
