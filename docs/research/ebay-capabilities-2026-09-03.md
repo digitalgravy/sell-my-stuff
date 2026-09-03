@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-This is an initial official-source pass. It does not replace authenticated UK account inspection or a Sandbox proof.
+This combines an official-source pass with a read-only authenticated UK account inspection. It does not replace a Sandbox API proof.
 
 ## Findings
 
@@ -34,10 +34,21 @@ This is an initial official-source pass. It does not replace authenticated UK ac
 4. Keep browser publication viable because Seller Hub may be more compatible with the user's normal manual editing workflow.
 5. Keep all mechanisms behind `ComparableSalesProvider` and `MarketplacePublisher` ports; mechanism never changes approval requirements.
 
+## Authenticated UK UI findings
+
+The user's existing session opened Seller Hub without reauthentication. No credentials or session data were copied or stored.
+
+- Product Research is available at `/sh/research`, defaults to marketplace `EBAY-UK`, the Sold tab and a 30-day window.
+- The keyword field accepts keywords, MPN, UPC, EPID, EAN or ISBN. Visible filters include category, condition, format, price, top-rated status and additional filters.
+- Results expose aggregate average sold price, sold-price range, average postage, free-postage rate, sell-through, seller count and time-series charts.
+- Result rows expose title, average sold price, format, average postage, units sold, item sales, bids and last-sold date. The UI offers 10/20/50 rows per page.
+- A harmless A2520 keyboard query confirmed why matching must be deterministic: results mixed colour, layout, condition, bundles and defective examples despite a specific model query.
+- Regular Sold + Completed search remains available and exposes public item cards, visible sold date, condition, displayed price, sale format, postage and a “Best Offer accepted” marker. Product Research is richer because it supplies actual accepted-offer values and aggregate metrics rather than only the public card's struck/displayed price.
+- Seller Hub currently indicates the account needs some account-detail updates before listing again. Publication eligibility must therefore be treated as unresolved until those requirements and business policies are checked deliberately.
+
 ## Next verification
 
-- Inspect the user's authenticated eBay UK Seller Hub and Product Research availability.
-- Compare Sold/Completed search's visible fields and history window with Product Research.
+- Determine the available Product Research date-window controls and durable extraction approach.
 - Confirm auction and schedule behavior for the relevant UK account/category mix.
 - Confirm Inventory API eligibility, photo handling, category aspects and revision limitations in Sandbox.
 - Inspect Finances API coverage for actual fees/payout reconciliation.

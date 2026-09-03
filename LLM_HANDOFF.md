@@ -8,7 +8,7 @@ Sell My Stuff is a self-hosted, mobile-first AI selling assistant. The core expe
 
 ## Current state
 
-- Branch: `codex/foundations`; no PR yet.
+- Branch: `codex/foundations`, pushed to Gitea; PR form is drafted in the browser but not submitted.
 - `origin` is the authoritative Gitea repo: `gitea@git.26fe.uk:stue/sell-my-stuff.git`.
 - `github` is the GitHub mirror: `git@github.com:digitalgravy/sell-my-stuff.git`.
 - Both remotes currently have `main` at `3e4cd5e`.
@@ -40,7 +40,7 @@ See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
 ## Exact next action
 
 1. Build the Docker image on a host with a running daemon and verify `/api/healthz` from the container.
-2. Verify the existing Gitea repo has the required registry Actions secrets, then push `codex/foundations` and open a PR.
+2. Configure the missing Gitea registry Actions secrets through an approved mechanism, add a `main` branch protection rule, and submit the prepared PR.
 3. Start the first server-owned vertical slice: item/photo schema + migration + durable upload API + `inspect_images` job contract.
 4. Begin authenticated eBay UK inspection; pause for user login/MFA if required.
 
@@ -64,8 +64,8 @@ npm run build
 
 ## External integration state
 
-- eBay API research: initial official-source pass complete in `docs/research/ebay-capabilities-2026-09-03.md`; authenticated UI investigation remains.
-- Authenticated eBay session: unknown; expect login/MFA and human takeover.
+- eBay research: official-source pass plus authenticated Seller Hub, Product Research and Sold/Completed inspection complete in `docs/research/ebay-capabilities-2026-09-03.md`.
+- Authenticated eBay session: available in the user's Chrome profile on 2026-09-03; no credentials/session material stored. Seller Hub reports account-detail updates are required before listing again.
 - Browser Operator: architecture only, no implementation/profile.
 - AI providers: none configured.
 - Marketplace, carrier and packaging adapters: none implemented.
@@ -78,3 +78,4 @@ npm run build
 - The current upload success is presentation-only; do not describe it as durable or cross-device.
 - Do not run `npm audit fix --force`; audit findings require deliberate compatible upgrades.
 - The local Docker daemon was unavailable on 2026-09-03, so the Dockerfile has not yet been built end-to-end.
+- Gitea repository settings were inspected: `main` has no protection rule and repository Actions has no secrets. Changing either is a separate privileged action.

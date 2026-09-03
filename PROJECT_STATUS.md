@@ -9,7 +9,7 @@ Milestone 0 — repository and engineering foundations, with the first recognisa
 - Branch: `codex/foundations`
 - Current PR: none
 - Current production version: not deployed
-- Last known-good commit: `3e4cd5e` (initial brief only)
+- Last known-good commit: `f61ac1b` (local test/typecheck/lint/build gate passed; container runtime remains unverified)
 
 ## In progress
 
@@ -44,7 +44,8 @@ Milestone 0 — repository and engineering foundations, with the first recognisa
 - [ ] Implement durable image upload and a resumable `inspect_images` job.
 - [ ] Research current eBay API and authenticated browser capabilities; write strategy ADRs.
   - [x] Initial official-source API/Product Research reconnaissance
-  - [ ] Authenticated eBay UK account inspection
+  - [x] Authenticated Seller Hub, Product Research and Sold/Completed inspection
+  - [ ] Sandbox/API publication proof
 - [ ] Add component, accessibility and mobile E2E coverage for capture.
 
 ## Recently completed
@@ -55,6 +56,8 @@ Milestone 0 — repository and engineering foundations, with the first recognisa
 - [x] Opened the first meaningful local preview.
 - [x] Added a branded social preview and site metadata.
 - [x] Completed initial official-source eBay capability research.
+- [x] Confirmed authenticated UK Product Research access and compared it with Sold/Completed search.
+- [x] Pushed `codex/foundations` to the authoritative Gitea remote.
 
 ## Known bugs
 
@@ -84,3 +87,4 @@ Milestone 0 — repository and engineering foundations, with the first recognisa
 - Overseer manifest/proposals: pending
 - Rollback: initial deployment not yet created
 - Container verification: blocked locally because the Docker/OrbStack daemon is not running; CI will run the same Dockerfile gate.
+- Gitea readiness: no branch protection rule and no repository Actions secrets currently exist; both must be configured before merging.
