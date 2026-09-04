@@ -8,10 +8,11 @@ Milestone 0 foundations are merged. Milestone 1 now has a server-owned capture
 contract and a first identification worker slice, but production persistence
 remains safely disabled until its infrastructure is provisioned.
 
-- Branch: `main` is authoritative; this update is prepared on `codex/status-after-worker`
-- Current PR: none; worker PR #3 and CI follow-up PR #4 are merged
+- Branch: `main` is authoritative; this final handoff update is prepared on
+  `codex/final-handoff`
+- Current PR: none before this handoff update; delivery PRs #2–#5 are merged
 - Current production version: not deployed
-- Last known-good `main`: `3dfcf9e` (merged Gitea PR #4)
+- Last code-bearing `main`: `3dfcf9e` (PR #4); PR #5 (`aee095d`) is documentation-only
 
 ## In progress
 
@@ -19,7 +20,7 @@ remains safely disabled until its infrastructure is provisioned.
   - [x] Responsive application, design tokens and multi-photo capture UI
   - [x] Standard self-hosted Next.js Node runtime and standalone image
   - [x] Docker/Overseer manifest and Gitea workflow
-  - [x] Gitea PRs #1–#4 delivered to `main`
+  - [x] Gitea PRs #1–#5 delivered or closed after their contents reached `main`
   - [x] First Gitea Actions container build completed successfully
   - [ ] Configure registry Actions secrets (the first run failed only at image push)
   - [ ] Create and approve the first Overseer container, DNS and proxy proposals

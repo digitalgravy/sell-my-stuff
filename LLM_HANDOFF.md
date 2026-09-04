@@ -11,10 +11,11 @@ Read `BRIEF.md` before changing scope.
 
 ## Current state
 
-- Gitea PRs #1–#4 have been delivered. `main` is known-good at `3dfcf9e`.
+- The latest code-bearing `main` is `3dfcf9e` (PR #4). PR #5 (`aee095d`) is
+  documentation-only. PR #1 was closed after its contents had already reached
+  `main`; PRs #2–#5 are merged.
 - Worker delivery was PR #3; deterministic container installation was PR #4.
-- The branch contains the reviewed UI redesign and worker/vision slice
-  described below.
+- `main` contains the reviewed UI redesign and worker/vision slice described below.
 - `origin` is authoritative Gitea; `github` is the GitHub mirror.
 - The app now uses standard Next.js 16 Node self-hosting with standalone output,
   not the initial Cloudflare/Vinext prototype runtime.
@@ -160,6 +161,18 @@ See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
 6. Build the "3 things need you" UI backed by `identity.open_questions`
    facts, replacing the current illustrative queue data in `app/page.tsx`.
 
+## Handoff checklist
+
+1. Read `BRIEF.md`, then `OVERSEER-INFORMATION.md`, this file,
+   `PROJECT_STATUS.md`, `ROADMAP.md`, and the relevant ADRs.
+2. Fetch `origin/main`; do not treat an older local `main` as authoritative.
+3. Preserve `CAPTURE_API_ENABLED=false` until Postgres, migrations and the
+   durable upload volume have been provisioned and verified.
+4. Use Overseer for infrastructure mutations; do not create infrastructure
+   directly or misuse the single HTTP-application deploy manifest for Postgres.
+5. Run `npm test`, `npm run typecheck`, `npm run lint`, and `npm run build`
+   before merging application changes.
+
 ## Commands
 
 ```sh
@@ -206,6 +219,9 @@ npm run db:migrate
   until credentials are configured through an approved mechanism.
 - Branch protection is intentionally unnecessary per the project owner; PR review
   and passing local/CI evidence still remain the merge standard.
+- The project owner has authorised the coding agent to open and merge future PRs
+  at its judgement when satisfied with the review and verification evidence;
+  no additional merge confirmation is required.
 - `AnthropicVisionProvider` will throw immediately and clearly if
   `ANTHROPIC_API_KEY` is unset — this is intended (fail fast), not a bug to
   "fix" by adding a fallback/mock provider in production code.
