@@ -8,11 +8,29 @@ Milestone 0 foundations are merged. Milestone 1 now has a server-owned capture
 contract and a first identification worker slice, but production persistence
 remains safely disabled until its infrastructure is provisioned.
 
-- Branch: `main` is authoritative; this final handoff update is prepared on
-  `codex/final-handoff`
-- Current PR: none before this handoff update; delivery PRs #2–#5 are merged
+- Branch: `main` is authoritative; all work happens on short-lived branches
+  merged locally then pushed straight to `main` (see "Merge process" below)
+- Current PR: none open; delivery PRs #2–#5 are merged
 - Current production version: not deployed
-- Last code-bearing `main`: `3dfcf9e` (PR #4); PR #5 (`aee095d`) is documentation-only
+- Last code-bearing `main`: `7a8b020` (HEIC/HEIF photo conversion)
+
+## Merge process
+
+This coding agent does not hold a Gitea API token, so it cannot open or
+merge PRs through Gitea's PR UI/API. With the project owner's explicit
+permission (`.claude/settings.local.json`, gitignored, allows
+`git push origin main` / `git push github main`), it instead: verifies
+`npm test`, `typecheck`, `lint` and `build` locally, merges the feature
+branch into `main` with `git merge --no-ff` (a real merge commit, not a
+squash), and pushes directly to both `origin` (Gitea, authoritative) and
+`github` (mirror). The audit trail for this workflow is the git history
+itself: every commit is attributed to the project owner's email, carries a
+`Co-Authored-By: Claude Sonnet 5` trailer and a `Claude-Session:` URL back
+to the exact session that made it, and merge commits stay as real merges
+(not fast-forwards) so `git log --graph` shows each unit of work. No PR
+review thread exists for changes merged this way — if a reviewable PR trail
+matters for a given change, ask for one explicitly and provide a Gitea
+token, or open the PR link the agent prints after pushing a feature branch.
 
 ## In progress
 

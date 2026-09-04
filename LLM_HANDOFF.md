@@ -11,12 +11,35 @@ Read `BRIEF.md` before changing scope.
 
 ## Current state
 
-- The latest code-bearing `main` is `3dfcf9e` (PR #4). PR #5 (`aee095d`) is
-  documentation-only. PR #1 was closed after its contents had already reached
-  `main`; PRs #2–#5 are merged.
+- The latest code-bearing `main` is `7a8b020` (HEIC/HEIF photo conversion,
+  merged directly — see "Merge process without a Gitea token" below). PR #1
+  was closed after its contents had already reached `main`; PRs #2–#5 are
+  merged; #6 was a handoff-docs-only merge.
 - Worker delivery was PR #3; deterministic container installation was PR #4.
 - `main` contains the reviewed UI redesign and worker/vision slice described below.
 - `origin` is authoritative Gitea; `github` is the GitHub mirror.
+
+## Merge process without a Gitea token
+
+This agent has no Gitea API token/`tea` CLI, so it cannot open or merge
+Gitea PRs directly (unlike the `overseer-bot`-authored merges for PRs
+#2–#6, which used that bot's own Gitea credentials outside Overseer's tool
+surface — Overseer's own Gitea integration, `gitea-client.ts` in the
+Overseer repo, only supports `createOrgRepo`/`setActionsSecret`, nothing
+PR-related, so connecting Overseer's MCP would not add this capability
+either). With explicit project-owner permission, the project owner added a
+narrow, exact-match (no wildcard) allow rule to `.claude/settings.local.json`
+(gitignored) for `git push origin main` and `git push github main` only.
+The workflow is: verify `npm test`/`typecheck`/`lint`/`build` locally on a
+short-lived branch, `git merge --no-ff` it into `main` (a real merge commit,
+not a squash or fast-forward), then push directly to both remotes. The
+audit trail is the git history itself — every commit carries the project
+owner's authorship, a `Co-Authored-By: Claude Sonnet 5` trailer and a
+`Claude-Session:` URL, and merge commits are preserved so `git log --graph`
+shows each unit of work. No Gitea PR/review thread exists for changes
+merged this way. If a reviewable PR trail is wanted for a specific change,
+ask the project owner rather than assuming — either they open the PR link
+printed after a feature-branch push, or they provide a scoped Gitea token.
 - The app now uses standard Next.js 16 Node self-hosting with standalone output,
   not the initial Cloudflare/Vinext prototype runtime.
 - The capture UI POSTs its actual files to `POST /api/items` and only shows a
