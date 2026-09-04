@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type {
+  ConvertedPhoto,
+  PhotoConverter,
+  PhotoForConversion,
+} from '../server/ai/photo-conversion';
+import type {
   IdentificationResult,
   PhotoForIdentification,
   VisionIdentificationProvider,
@@ -112,6 +117,16 @@ class StubVisionProvider implements VisionIdentificationProvider {
   }
 }
 
+class StubPhotoConverter implements PhotoConverter {
+  received: PhotoForConversion[] = [];
+
+  async convert(photo: PhotoForConversion): Promise<ConvertedPhoto> {
+    this.received.push(photo);
+    if (photo.mediaType !== 'image/heic') return photo;
+    return { mediaType: 'image/jpeg', buffer: Buffer.from([4, 5, 6]) };
+  }
+}
+
 function seedItem(
   jobs: MemoryResearchJobRepository,
   objectStore: MemoryObjectStore,
@@ -167,6 +182,45 @@ void test('claims a queued job, saves facts and marks the item researching', asy
   );
   assert.equal(manufacturerFact?.value, JSON.stringify('Apple'));
   assert.equal(manufacturerFact?.origin, 'image_inference');
+});
+
+void test('converts each photo through the photo converter before identification', async () => {
+  const jobs = new MemoryResearchJobRepository();
+  const objectStore = new MemoryObjectStore();
+  jobs.queue.push({ id: 'job-4', itemId: 'item-4', type: 'inspect_images', attempt: 0 });
+  jobs.photosByItem.set('item-4', [
+    {
+      id: 'photo-1',
+      objectKey: 'items/item-4/photo-1.heic',
+      mediaType: 'image/heic',
+    },
+  ]);
+  objectStore.objects.set(
+    'items/item-4/photo-1.heic',
+    new Uint8Array([1, 2, 3]),
+  );
+  const photoConverter = new StubPhotoConverter();
+  const vision = new StubVisionProvider({
+    candidates: [
+      {
+        itemType: 'wireless keyboard',
+        confidence: 0.92,
+        evidence: 'Apple logo visible',
+      },
+    ],
+    openQuestions: [],
+  });
+
+  await runInspectImagesJob({ jobs, objectStore, vision, photoConverter });
+
+  assert.deepEqual(photoConverter.received, [
+    { mediaType: 'image/heic', buffer: Buffer.from([1, 2, 3]) },
+  ]);
+  assert.equal(vision.received?.[0]?.mediaType, 'image/jpeg');
+  assert.equal(
+    vision.received?.[0]?.base64,
+    Buffer.from([4, 5, 6]).toString('base64'),
+  );
 });
 
 void test('routes low-confidence identification to needs information', async () => {

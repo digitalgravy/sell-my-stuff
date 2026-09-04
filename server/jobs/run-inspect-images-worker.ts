@@ -1,4 +1,5 @@
 import { getAnthropicVisionProvider } from '@/server/ai/anthropic-vision-provider';
+import { getPhotoConverter } from '@/server/ai/heic-photo-converter';
 import { PostgresResearchJobRepository } from '@/server/items/postgres-research-repository';
 import { getFileObjectStore } from '@/server/storage/file-object-store';
 
@@ -15,6 +16,7 @@ async function main() {
     jobs: new PostgresResearchJobRepository(),
     objectStore: getFileObjectStore(),
     vision: getAnthropicVisionProvider(),
+    photoConverter: getPhotoConverter(),
   };
 
   console.log('inspect_images worker started');

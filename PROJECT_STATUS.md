@@ -36,7 +36,7 @@ remains safely disabled until its infrastructure is provisioned.
   - [x] First evidence/confidence record model (`item_facts` table)
   - [ ] Provision and integration-test PostgreSQL plus durable upload storage
   - [ ] Verify the worker end-to-end against a real Anthropic API key and a real photo
-  - [ ] HEIC/HEIF → JPEG/PNG conversion before vision inspection (see Known bugs)
+  - [x] HEIC/HEIF → JPEG conversion before vision inspection
   - [ ] "Ask user only if necessary" UI for `identity.open_questions`
 
 ## Blocked
@@ -58,7 +58,6 @@ remains safely disabled until its infrastructure is provisioned.
 - [ ] Enable `CAPTURE_API_ENABLED` only after both dependencies are healthy.
 - [ ] Configure `ANTHROPIC_API_KEY` (via Overseer/SOPS secrets, not the repo)
       and run the worker against a real item to verify the vision adapter end to end.
-- [ ] Add HEIC/HEIF → JPEG/PNG conversion so real iPhone photos reach the vision adapter.
 - [ ] Build the "3 things need you" UI backed by `identity.open_questions` facts
       instead of the current illustrative queue data.
 - [ ] Decide the production identity boundary after checking trusted-device conventions.
@@ -89,17 +88,18 @@ remains safely disabled until its infrastructure is provisioned.
       `AnthropicVisionProvider` adapter, `PostgresResearchJobRepository`
       (leased `FOR UPDATE SKIP LOCKED` claims) and `runInspectImagesJob`, plus
       a bundled production poll-loop worker entrypoint (`npm run worker`).
+- [x] Added the `PhotoConverter` port (`server/ai/photo-conversion.ts`) and
+      `HeicPhotoConverter` (`server/ai/heic-photo-converter.ts`, using
+      `heic-convert`'s pure-JS/WASM libheif build) so HEIC/HEIF photos are
+      converted to JPEG before reaching the vision provider; wired into
+      `runInspectImagesJob` and the production worker entrypoint. Verified
+      against a real `.heic` file locally (gated test, see `DEVELOPMENT.md`).
 
 ## Known bugs
 
 - [ ] Production capture returns a clear 503 until persistence infrastructure is ready.
 - [ ] Navigation, metrics and sample task rows are illustrative and not API-backed.
 - [ ] WebMCP registration is feature-detected but not contract-tested in a supported host.
-- [ ] `AnthropicVisionProvider` rejects HEIC/HEIF photos (Claude vision only
-      accepts JPEG/PNG/GIF/WebP) with a clear `UnsupportedPhotoFormatError`,
-      which fails the job with a readable error rather than crashing — but
-      HEIC is the default iPhone capture format already accepted by
-      `POST /api/items`, so real captures need a conversion step first.
 
 ## Technical debt
 
@@ -118,7 +118,10 @@ remains safely disabled until its infrastructure is provisioned.
 ## Test status
 
 - Build: passing (`npm run build`, 2026-09-04)
-- Unit/API contract tests: 23 passing (`npm test`, 2026-09-04)
+- Unit/API contract tests: 27 passing, 1 skipped (`npm test`, 2026-09-04); the
+  skipped test exercises real HEIC decoding and only runs when
+  `HEIC_TEST_FIXTURE` points at a local `.heic` file (see `DEVELOPMENT.md`) —
+  run manually and confirmed passing against a real HEIC photo on 2026-09-04
 - Typecheck/lint: passing (`npm run typecheck`, `npm run lint`, 2026-09-04)
 - PostgreSQL/filesystem integration, component, accessibility, visual and E2E: pending
 - `inspect_images` worker and `AnthropicVisionProvider`: unit-tested against

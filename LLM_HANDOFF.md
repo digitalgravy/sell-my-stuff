@@ -108,11 +108,18 @@ adapter" and a first version of the evidence/confidence model:
 - **Not verified against real infrastructure**: no `ANTHROPIC_API_KEY` and
   no reachable Postgres in this environment (Docker/OrbStack daemon down),
   so this is unit-tested against fakes only.
-- **Known gap**: Claude vision only accepts JPEG/PNG/GIF/WebP. HEIC/HEIF
-  (the default iPhone format, already accepted at capture time) is rejected
-  by the adapter with a clear error rather than a crash — a conversion step
-  is still needed before this works on real captures. See ADR 0007's
-  Implementation note.
+- **Resolved (2026-09-04)**: Claude vision only accepts JPEG/PNG/GIF/WebP,
+  but HEIC/HEIF (the default iPhone format) is already accepted at capture
+  time. `server/ai/photo-conversion.ts` (`PhotoConverter` port) and
+  `server/ai/heic-photo-converter.ts` (`HeicPhotoConverter`, using
+  `heic-convert`'s pure-JS/WASM libheif build — chosen over `sharp` because
+  sharp's prebuilt binaries omit HEIC input support for patent-licensing
+  reasons) now convert HEIC/HEIF to JPEG inside `runInspectImagesJob` before
+  the vision call. `AnthropicVisionProvider`'s `UnsupportedPhotoFormatError`
+  remains as a defense-in-depth backstop. Verified against a real `.heic`
+  file locally; `test/photo-conversion.test.ts`'s real-decode test is gated
+  on `HEIC_TEST_FIXTURE` so it stays skipped (not failing) without one. See
+  ADR 0007's Implementation note.
 - ADR 0007 updated with an "Implementation" section describing all of the above.
 
 ## Architecture direction
@@ -156,9 +163,7 @@ See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
    `DATABASE_URL`, `SELL_STORAGE_PATH` and `ANTHROPIC_API_KEY`, and perform a
    real capture → worker → facts-written test end to end.
 4. Only then set `CAPTURE_API_ENABLED=true` through a reviewed deploy proposal.
-5. Add HEIC/HEIF → JPEG/PNG conversion so real iPhone photos reach
-   `AnthropicVisionProvider` (currently rejected with a clear error).
-6. Build the "3 things need you" UI backed by `identity.open_questions`
+5. Build the "3 things need you" UI backed by `identity.open_questions`
    facts, replacing the current illustrative queue data in `app/page.tsx`.
 
 ## Handoff checklist
