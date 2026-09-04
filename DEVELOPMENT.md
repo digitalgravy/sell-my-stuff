@@ -13,6 +13,11 @@ configure a disposable PostgreSQL database and upload directory, run
 Run `npm run worker:dev` for the source-mode inspection worker. A normal
 `npm run build` also creates `dist/worker.mjs`, which `npm run worker` executes.
 
+`server/ai/heic-photo-converter.ts` converts HEIC/HEIF photos to JPEG before
+they reach the vision provider. Its real-decode test is skipped by default;
+point `HEIC_TEST_FIXTURE` at a local `.heic` file to run it:
+`HEIC_TEST_FIXTURE=/path/to/photo.heic npm test`.
+
 Work on a short-lived branch. Keep `main` known-good, use Conventional Commits, and update `PROJECT_STATUS.md` and `LLM_HANDOFF.md` in every meaningful session.
 
 Do not commit `.env` files, item images, database data, browser profiles, downloads, cookies, traces containing private page content, or credentials.

@@ -1,3 +1,7 @@
+import {
+  identityPhotoConverter,
+  type PhotoConverter,
+} from '@/server/ai/photo-conversion';
 import type {
   IdentificationCandidate,
   PhotoForIdentification,
@@ -20,6 +24,7 @@ export interface InspectImagesJobDependencies {
   jobs: ResearchJobRepository;
   objectStore: ObjectStore;
   vision: VisionIdentificationProvider;
+  photoConverter?: PhotoConverter;
   maxAttempts?: number;
   leaseMs?: number;
   now?: () => Date;
@@ -34,6 +39,7 @@ export async function runInspectImagesJob(
 ): Promise<InspectImagesJobResult> {
   const maxAttempts = dependencies.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const leaseMs = dependencies.leaseMs ?? DEFAULT_JOB_LEASE_MS;
+  const photoConverter = dependencies.photoConverter ?? identityPhotoConverter;
   const job = await dependencies.jobs.claimNextJob(
     INSPECT_IMAGES_JOB_TYPE,
     maxAttempts,
@@ -46,12 +52,19 @@ export async function runInspectImagesJob(
 
     const photos = await dependencies.jobs.getItemPhotos(job.itemId);
     const photosForIdentification: PhotoForIdentification[] = await Promise.all(
-      photos.map(async (photo) => ({
-        mediaType: photo.mediaType,
-        base64: Buffer.from(
+      photos.map(async (photo) => {
+        const original = Buffer.from(
           await dependencies.objectStore.get(photo.objectKey),
-        ).toString('base64'),
-      })),
+        );
+        const converted = await photoConverter.convert({
+          mediaType: photo.mediaType,
+          buffer: original,
+        });
+        return {
+          mediaType: converted.mediaType,
+          base64: converted.buffer.toString('base64'),
+        };
+      }),
     );
 
     const result = await dependencies.vision.identify(photosForIdentification);
