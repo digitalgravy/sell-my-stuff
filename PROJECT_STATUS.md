@@ -55,7 +55,7 @@ token, or open the PR link the agent prints after pushing a feature branch.
   - [ ] Provision and integration-test PostgreSQL plus durable upload storage
   - [ ] Verify the worker end-to-end against a real Anthropic API key and a real photo
   - [x] HEIC/HEIF → JPEG conversion before vision inspection
-  - [ ] "Ask user only if necessary" UI for `identity.open_questions`
+  - [x] "Ask user only if necessary" UI for `identity.open_questions`
 
 ## Blocked
 
@@ -76,13 +76,26 @@ token, or open the PR link the agent prints after pushing a feature branch.
 - [ ] Enable `CAPTURE_API_ENABLED` only after both dependencies are healthy.
 - [ ] Configure `ANTHROPIC_API_KEY` (via Overseer/SOPS secrets, not the repo)
       and run the worker against a real item to verify the vision adapter end to end.
-- [ ] Build the "3 things need you" UI backed by `identity.open_questions` facts
-      instead of the current illustrative queue data.
 - [ ] Decide the production identity boundary after checking trusted-device conventions.
 - [ ] Add component, accessibility and mobile E2E coverage for capture.
 
 ## Recently completed
 
+- [x] Replaced the illustrative "Needs your attention"/"Working for you" rows
+      with real data: `GET /api/items/homepage` (feature-gated, trusted-origin
+      checked, returns a truthful empty snapshot rather than an error while
+      capture is disabled), a `HomepageRepository` port + `PostgresHomepageRepository`
+      that reads active items and their `identity.*` facts, and a pure
+      `buildHomepageSnapshot` function (unit-tested, no database needed) that
+      derives a display title, buckets `NEEDS_INFORMATION` items into
+      attention with their first open question (or a confidence fallback
+      reason), and buckets `INBOX`/`IDENTIFYING`/`RESEARCHING` into working
+      with a named stage. `app/page.tsx` now fetches on mount and after a
+      successful capture, with truthful loading/empty/error(+retry) states
+      per `DESIGN_GUIDE.md`'s data-honesty rule. The "Last activity" line is
+      now derived from the same real data. The three outcome metrics (items
+      cleared / realised / in progress) stay illustrative — they need a
+      valuation/sales data model that doesn't exist yet.
 - [x] Corrected the Today view implementation to match its mockup: fixed the
       document-level Inter application, removed the blue/violet capture-card
       treatment and replaced reassuring capture copy with terse functional text.
@@ -126,14 +139,14 @@ token, or open the PR link the agent prints after pushing a feature branch.
 ## Known bugs
 
 - [ ] Production capture returns a clear 503 until persistence infrastructure is ready.
-- [ ] Navigation, metrics and sample task rows are illustrative and not API-backed.
+- [ ] Navigation links and the three outcome metrics are illustrative and not API-backed.
 - [ ] WebMCP registration is feature-detected but not contract-tested in a supported host.
 
 ## Technical debt
 
 - [ ] Add orphan-object reconciliation for failures outside the compensated write path.
 - [x] Revoke browser object URLs on removal, reset and page unmount.
-- [ ] Replace illustrative queue data with API-backed records.
+- [x] Replace illustrative queue data with API-backed records.
 - [ ] Resolve dependency audit findings without forced breaking upgrades.
 - [ ] `item_facts` currently upserts one current value per `(itemId, field)`
       (latest evidence wins); the brief's full evidence model implies a
@@ -146,7 +159,7 @@ token, or open the PR link the agent prints after pushing a feature branch.
 ## Test status
 
 - Build: passing (`npm run build`, 2026-09-04)
-- Unit/API contract tests: 27 passing, 1 skipped (`npm test`, 2026-09-04); the
+- Unit/API contract tests: 34 passing, 1 skipped (`npm test`, 2026-09-04); the
   skipped test exercises real HEIC decoding and only runs when
   `HEIC_TEST_FIXTURE` points at a local `.heic` file (see `DEVELOPMENT.md`) —
   run manually and confirmed passing against a real HEIC photo on 2026-09-04

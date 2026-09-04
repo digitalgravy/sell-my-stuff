@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { formatDistanceToNowStrict } from 'date-fns';
 import {
   Camera,
   Check,
   ChevronRight,
-  CircleDollarSign,
   Clock3,
+  CircleHelp,
   ImagePlus,
   LoaderCircle,
   Menu,
@@ -17,28 +18,28 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { isSupportedImage } from '@/lib/capture-policy';
+import type {
+  AttentionItem,
+  WorkingItem,
+} from '@/server/items/homepage-snapshot';
 
 type Photo = { id: string; name: string; url: string; file: File };
+type HomepageStatus = 'loading' | 'ready' | 'error';
+type HomepageSnapshot = { attention: AttentionItem[]; working: WorkingItem[] };
 
-const queue = [
-  {
-    name: 'Apple Magic Keyboard',
-    detail: 'Checking the exact model and recent sales',
-    state: 'Researching',
-    progress: 64,
-    icon: Sparkles,
-  },
-  {
-    name: 'Sony headphones',
-    detail: 'Draft listing and valuation complete',
-    state: 'Ready',
-    progress: 100,
-    icon: Check,
-  },
-];
+function relativeTime(isoTimestamp: string): string {
+  return formatDistanceToNowStrict(new Date(isoTimestamp), {
+    addSuffix: true,
+  });
+}
+
+async function requestHomepageSnapshot(): Promise<HomepageSnapshot> {
+  const response = await fetch('/api/items/homepage');
+  if (!response.ok) throw new Error('Could not load current items');
+  return (await response.json()) as HomepageSnapshot;
+}
 
 const today = new Intl.DateTimeFormat('en-GB', {
   weekday: 'long',
@@ -55,6 +56,38 @@ export default function Home() {
   const [submitted, setSubmitted] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string>();
+  const [attention, setAttention] = useState<AttentionItem[]>([]);
+  const [working, setWorking] = useState<WorkingItem[]>([]);
+  const [homepageStatus, setHomepageStatus] =
+    useState<HomepageStatus>('loading');
+
+  const reloadHomepage = useCallback(() => {
+    setHomepageStatus('loading');
+    requestHomepageSnapshot()
+      .then((data) => {
+        setAttention(data.attention);
+        setWorking(data.working);
+        setHomepageStatus('ready');
+      })
+      .catch(() => setHomepageStatus('error'));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    requestHomepageSnapshot()
+      .then((data) => {
+        if (cancelled) return;
+        setAttention(data.attention);
+        setWorking(data.working);
+        setHomepageStatus('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setHomepageStatus('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const next = Array.from(files)
@@ -160,6 +193,7 @@ export default function Home() {
       if (!response.ok)
         throw new Error(result.error ?? 'The photos could not be saved');
       setSubmitted(true);
+      reloadHomepage();
     } catch (error) {
       setUploadError(
         error instanceof Error
@@ -170,6 +204,10 @@ export default function Home() {
       setUploading(false);
     }
   };
+
+  const lastActivity = [...attention, ...working].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  )[0];
 
   return (
     <main className="min-h-dvh bg-background text-foreground">
@@ -447,36 +485,48 @@ export default function Home() {
               </Button>
             </div>
 
-            <div className="mt-3 divide-y divide-border/70">
-              <button className="group flex min-h-[76px] w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20">
-                <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-warning-soft text-warning">
-                  <Camera className="size-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">
-                    Photograph the graphics card label
-                  </span>
-                  <span className="mt-1 block truncate text-xs text-muted-foreground sm:text-[13px]">
-                    NVIDIA graphics card · model confirmation
-                  </span>
-                </span>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </button>
-              <button className="group flex min-h-[76px] w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20">
-                <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">
-                  <CircleDollarSign className="size-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">
-                    Review the £84 sale proposal
-                  </span>
-                  <span className="mt-1 block truncate text-xs text-muted-foreground sm:text-[13px]">
-                    Sony headphones · ready to approve
-                  </span>
-                </span>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </button>
-            </div>
+            {homepageStatus === 'loading' ? (
+              <p className="py-6 text-sm text-muted-foreground">Loading…</p>
+            ) : homepageStatus === 'error' ? (
+              <div className="flex items-center justify-between gap-3 py-6">
+                <p className="text-sm text-muted-foreground">
+                  Could not load current items.
+                </p>
+                <Button
+                  variant="ghost"
+                  className="h-8 rounded-full px-3 text-xs"
+                  onClick={reloadHomepage}
+                >
+                  Retry
+                </Button>
+              </div>
+            ) : attention.length === 0 ? (
+              <p className="py-6 text-sm text-muted-foreground">
+                Nothing needs your attention.
+              </p>
+            ) : (
+              <div className="mt-3 divide-y divide-border/70">
+                {attention.map((item) => (
+                  <button
+                    key={item.id}
+                    className="group flex min-h-[76px] w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20"
+                  >
+                    <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-warning-soft text-warning">
+                      <CircleHelp className="size-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">
+                        {item.title}
+                      </span>
+                      <span className="mt-1 block truncate text-xs text-muted-foreground sm:text-[13px]">
+                        {item.reason} · {relativeTime(item.updatedAt)}
+                      </span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
 
           <section className="rounded-[1.5rem] border border-border/75 bg-card p-5 sm:p-6">
@@ -494,54 +544,57 @@ export default function Home() {
               </Button>
             </div>
 
-            <div className="mt-3 divide-y divide-border/70">
-              {queue.map((item) => {
-                const Icon = item.icon;
-                return (
+            {homepageStatus === 'loading' ? (
+              <p className="py-6 text-sm text-muted-foreground">Loading…</p>
+            ) : homepageStatus === 'error' ? (
+              <div className="flex items-center justify-between gap-3 py-6">
+                <p className="text-sm text-muted-foreground">
+                  Could not load current items.
+                </p>
+                <Button
+                  variant="ghost"
+                  className="h-8 rounded-full px-3 text-xs"
+                  onClick={reloadHomepage}
+                >
+                  Retry
+                </Button>
+              </div>
+            ) : working.length === 0 ? (
+              <p className="py-6 text-sm text-muted-foreground">
+                Nothing in progress.
+              </p>
+            ) : (
+              <div className="mt-3 divide-y divide-border/70">
+                {working.map((item) => (
                   <button
-                    key={item.name}
+                    key={item.id}
                     className="group flex min-h-[76px] w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20"
                   >
                     <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">
-                      <Icon className="size-4.5" />
+                      <Sparkles className="size-4.5" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-3">
-                        <span className="truncate text-sm font-semibold">
-                          {item.name}
-                        </span>
-                        <span
-                          className={cn(
-                            'shrink-0 text-[11px] font-semibold',
-                            item.state === 'Ready'
-                              ? 'text-success'
-                              : 'text-primary',
-                          )}
-                        >
-                          {item.state}
-                        </span>
+                      <span className="truncate text-sm font-semibold">
+                        {item.title}
                       </span>
                       <span className="mt-1 block truncate text-xs text-muted-foreground sm:text-[13px]">
-                        {item.detail}
+                        {item.stage} · {relativeTime(item.updatedAt)}
                       </span>
-                      {item.progress < 100 ? (
-                        <Progress
-                          value={item.progress}
-                          aria-label={`${item.name} progress`}
-                          className="mt-2 [&_[data-slot=progress-indicator]]:bg-primary [&_[data-slot=progress-track]]:h-[3px]"
-                        />
-                      ) : null}
                     </span>
                   </button>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
 
         <section className="mt-5 flex items-center gap-3 rounded-[1.25rem] border border-border/60 bg-card/55 px-4 py-3 text-sm text-muted-foreground sm:px-5">
           <Clock3 className="size-4 shrink-0" />
-          <p>Last activity: Magic Keyboard research updated 8 minutes ago.</p>
+          <p>
+            {lastActivity
+              ? `Last activity: ${lastActivity.title} updated ${relativeTime(lastActivity.updatedAt)}.`
+              : 'No recent activity.'}
+          </p>
           <PackageCheck className="ml-auto hidden size-4 shrink-0 text-success sm:block" />
         </section>
       </div>

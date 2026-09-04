@@ -145,8 +145,7 @@ adapter" and a first version of the evidence/confidence model:
 - Tests: `test/inspect-images-job.test.ts` (in-memory fakes for the
   repository/object store/vision provider — claim/succeed, low-confidence
   routing, no-job-available, retry-then-give-up) and
-  `test/vision-provider.test.ts` (schema acceptance/rejection). 23 tests
-  pass in total (`npm test`).
+  `test/vision-provider.test.ts` (schema acceptance/rejection).
 - **Not verified against real infrastructure**: no `ANTHROPIC_API_KEY` and
   no reachable Postgres in this environment (Docker/OrbStack daemon down),
   so this is unit-tested against fakes only.
@@ -163,6 +162,54 @@ adapter" and a first version of the evidence/confidence model:
   on `HEIC_TEST_FIXTURE` so it stays skipped (not failing) without one. See
   ADR 0007's Implementation note.
 - ADR 0007 updated with an "Implementation" section describing all of the above.
+
+## Homepage attention/working slice
+
+Replaces the illustrative "Needs your attention"/"Working for you" rows in
+`app/page.tsx` with real data, per `DESIGN_GUIDE.md`'s data-honesty rule and
+the "Next up" item it named:
+
+- `server/items/homepage-repository.ts` — `HomepageRepository` port,
+  `HomepageItemRow`/`HomepageItemFacts` types.
+- `server/items/homepage-snapshot.ts` — `buildHomepageSnapshot()`, a pure
+  function (fully unit-testable without a database) that buckets active
+  items by status: `NEEDS_INFORMATION` → attention (title + the first
+  `identity.open_questions` entry as the reason, or a fixed confidence
+  fallback when there isn't one), everything else reachable
+  (`INBOX`/`IDENTIFYING`/`RESEARCHING`) → working (title + a named stage
+  label). Derives the display title from `identity.manufacturer`/`model`/
+  `item_type` facts, since `items.title` is never set by the worker.
+- `server/items/postgres-homepage-repository.ts` — `PostgresHomepageRepository`,
+  queries `items` (status in the four reachable values) joined against a
+  narrow set of `item_facts` fields, JSON-parsing each value defensively
+  (`undefined`/`[]` on a parse failure rather than throwing).
+- `app/api/items/homepage/route.ts` — `GET`, trusted-origin checked like
+  `POST /api/items`. Returns `{ attention: [], working: [] }` (200, not an
+  error) while `CAPTURE_API_ENABLED` is off, since zero items can truthfully
+  exist yet; returns 500 with a factual error message on an unexpected
+  database failure once capture is enabled.
+- `app/page.tsx` fetches this on mount and again after a successful capture
+  submission, rendering loading/empty/error(+retry) states — no bar/percentage
+  progress, since the worker has no meaningful intermediate progress signal
+  (`DESIGN_GUIDE.md`'s "Progress" rule). The "Last activity" line is now
+  derived from the same fetched data (most-recently-updated item) rather than
+  hardcoded. The three outcome metrics stay illustrative — no valuation/sales
+  data model exists yet to back them truthfully.
+- **Lint gotcha worth knowing**: the `react/react-compiler` oxlint rule
+  (`error` in `.oxlintrc.json`) flags `useEffect(() => { void someCallback();
+  }, [someCallback])` when `someCallback` is a `useCallback`-wrapped async
+  function that calls `setState` — even when every `setState` call is after
+  an `await`. It seems unable to trace `setState` safety through that
+  indirection. The fix that satisfies it: inline the `.then()/.catch()` chain
+  literally in the effect body (a plain async helper function, not a hook, is
+  fine to call from there) rather than invoking a separately defined
+  `useCallback`. See the two `requestHomepageSnapshot()` call sites in
+  `app/page.tsx` for the working pattern.
+- Tests: `test/homepage-snapshot.test.ts` (bucketing, reason fallback, stage
+  labels including an unmapped-status fallback, title derivation) and
+  `test/api-items-homepage-route.test.ts` (disabled-gate returns 200 + empty,
+  not 503; cross-origin rejected). Not verified against a real database
+  (same infrastructure gap as the rest of Milestone 1).
 
 ## Architecture direction
 
@@ -205,8 +252,6 @@ See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
    `DATABASE_URL`, `SELL_STORAGE_PATH` and `ANTHROPIC_API_KEY`, and perform a
    real capture → worker → facts-written test end to end.
 4. Only then set `CAPTURE_API_ENABLED=true` through a reviewed deploy proposal.
-5. Build the "3 things need you" UI backed by `identity.open_questions`
-   facts, replacing the current illustrative queue data in `app/page.tsx`.
 
 ## Handoff checklist
 
