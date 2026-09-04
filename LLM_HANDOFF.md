@@ -14,10 +14,10 @@ assistant-persona copy.
 
 ## Current state
 
-- The latest code-bearing `main` is `7a8b020` (HEIC/HEIF photo conversion,
-  merged directly — see "Merge process without a Gitea token" below). PR #1
-  was closed after its contents had already reached `main`; PRs #2–#5 are
-  merged; #6 was a handoff-docs-only merge.
+- The latest code-bearing `main` is `d33729e` (homepage attention/working
+  panels backed by real data, merged directly — see "Merge process without a
+  Gitea token" below). PR #1 was closed after its contents had already
+  reached `main`; PRs #2–#5 are merged; #6 was a handoff-docs-only merge.
 - Worker delivery was PR #3; deterministic container installation was PR #4.
 - `main` contains the reviewed UI redesign and worker/vision slice described below.
 - `origin` is authoritative Gitea; `github` is the GitHub mirror.

@@ -12,7 +12,7 @@ remains safely disabled until its infrastructure is provisioned.
   merged locally then pushed straight to `main` (see "Merge process" below)
 - Current PR: none open; delivery PRs #2–#5 are merged
 - Current production version: not deployed
-- Last code-bearing `main`: `7a8b020` (HEIC/HEIF photo conversion)
+- Last code-bearing `main`: `d33729e` (homepage attention/working panels)
 
 ## Merge process
 
