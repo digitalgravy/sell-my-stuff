@@ -12,6 +12,10 @@ configure a disposable PostgreSQL database and upload directory, run
 `npm run db:migrate`, then start the app with `CAPTURE_API_ENABLED=true`.
 Run `npm run worker:dev` for the source-mode inspection worker. A normal
 `npm run build` also creates `dist/worker.mjs`, which `npm run worker` executes.
+`worker:dev` reads `.env.local` itself (via Node's `--env-file-if-exists`) for
+`ANTHROPIC_API_KEY`/`DATABASE_URL` — unlike `next dev`, a plain Node/tsx
+process doesn't auto-load `.env.local`, so without this flag the worker
+fails with a "not configured" error even when the file has the right values.
 
 `server/ai/heic-photo-converter.ts` converts HEIC/HEIF photos to JPEG before
 they reach the vision provider. Its real-decode test is skipped by default;

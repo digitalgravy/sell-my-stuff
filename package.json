@@ -11,7 +11,7 @@
     "build:worker": "esbuild server/jobs/run-inspect-images-worker.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/worker.mjs",
     "start": "next start -H 0.0.0.0 -p 3000",
     "worker": "node dist/worker.mjs",
-    "worker:dev": "node --import tsx server/jobs/run-inspect-images-worker.ts",
+    "worker:dev": "node --env-file-if-exists=.env.local --import tsx server/jobs/run-inspect-images-worker.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "test": "node --import tsx --test test/**/*.test.ts",
