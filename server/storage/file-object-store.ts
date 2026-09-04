@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ObjectStore, StoredObject } from './object-store';
@@ -11,6 +11,10 @@ export class FileObjectStore implements ObjectStore {
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o750 });
     await writeFile(destination, body, { flag: 'wx', mode: 0o640 });
     return { key, byteSize: body.byteLength };
+  }
+
+  async get(key: string): Promise<Uint8Array> {
+    return new Uint8Array(await readFile(this.resolveKey(key)));
   }
 
   async remove(key: string): Promise<void> {
