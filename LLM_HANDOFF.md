@@ -12,9 +12,9 @@ Read `BRIEF.md` before changing scope.
 ## Current state
 
 - Gitea PRs #1 and #2 are merged. `main` is known-good at `1f21d8c`.
-- Active branch: `codex/vision-worker`; PR not yet opened.
-- The working tree contains the reviewed UI redesign and worker/vision slice
-  described below; commit/PR delivery is the remaining repository step.
+- Active branch: `codex/vision-worker`; delivery PR #3.
+- The branch contains the reviewed UI redesign and worker/vision slice
+  described below.
 - `origin` is authoritative Gitea; `github` is the GitHub mirror.
 - The app now uses standard Next.js 16 Node self-hosting with standalone output,
   not the initial Cloudflare/Vinext prototype runtime.

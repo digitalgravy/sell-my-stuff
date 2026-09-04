@@ -9,7 +9,7 @@ contract and a first identification worker slice, but production persistence
 remains safely disabled until its infrastructure is provisioned.
 
 - Branch: `codex/vision-worker`
-- Current PR: not yet opened
+- Current PR: Gitea PR #3
 - Current production version: not deployed
 - Last known-good `main`: `1f21d8c` (merged Gitea PR #2)
 
