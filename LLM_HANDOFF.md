@@ -14,7 +14,7 @@ assistant-persona copy.
 
 ## Current state
 
-- The latest code-bearing `main` is `f945117` (Postgres connection wiring,
+- The latest code-bearing `main` is `55f0cff` (item detail page,
   merged directly — see "Merge process without a Gitea token" below). PR #1
   was closed after its contents had already reached `main`; PRs #2–#5 are
   merged; #6 was a handoff-docs-only merge.

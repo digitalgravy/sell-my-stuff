@@ -16,7 +16,7 @@ has been verified.
 - Current PR: none open; delivery PRs #2–#5 are merged
 - Current production version: deployed and live at `https://sell.26fe.uk`
   (image `f945117d4e88dcb1261f2c33f1e2eb158d907efd`, capture disabled)
-- Last code-bearing `main`: `f945117` (Postgres connection wiring)
+- Last code-bearing `main`: `55f0cff` (item detail page)
 
 ## Merge process
 
