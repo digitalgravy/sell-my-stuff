@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
   Camera,
@@ -17,15 +18,11 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { ActivityBadge } from '@/components/activity-badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isSupportedImage } from '@/lib/capture-policy';
-import type {
-  ActivityState,
-  AttentionItem,
-  WorkingItem,
-} from '@/server/items/homepage-snapshot';
+import type { AttentionItem, WorkingItem } from '@/server/items/homepage-snapshot';
 
 type Photo = { id: string; name: string; url: string; file: File };
 type HomepageStatus = 'loading' | 'ready' | 'error';
@@ -35,22 +32,6 @@ function relativeTime(isoTimestamp: string): string {
   return formatDistanceToNowStrict(new Date(isoTimestamp), {
     addSuffix: true,
   });
-}
-
-const ACTIVITY_BADGE: Record<ActivityState, { label: string; className?: string }> = {
-  working: { label: 'Working', className: 'border-transparent bg-primary/10 text-primary' },
-  waiting: { label: 'Waiting' },
-  paused: { label: 'Paused', className: 'border-transparent bg-warning-soft text-warning' },
-  errored: { label: 'Errored', className: 'border-transparent bg-destructive/10 text-destructive' },
-};
-
-function ActivityBadge({ activity }: { activity: ActivityState }) {
-  const { label, className } = ACTIVITY_BADGE[activity];
-  return (
-    <Badge variant="secondary" className={cn('shrink-0', className)}>
-      {label}
-    </Badge>
-  );
 }
 
 const HOMEPAGE_POLL_INTERVAL_MS = 8_000;
@@ -545,8 +526,9 @@ export default function Home() {
             ) : (
               <div className="mt-3 divide-y divide-border/70">
                 {attention.map((item) => (
-                  <button
+                  <Link
                     key={item.id}
+                    href={`/items/${item.id}`}
                     className="group flex min-h-[76px] w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20"
                   >
                     <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-warning-soft text-warning">
@@ -566,7 +548,7 @@ export default function Home() {
                       </span>
                     </span>
                     <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                  </button>
+                  </Link>
                 ))}
               </div>
             )}
@@ -609,8 +591,9 @@ export default function Home() {
             ) : (
               <div className="mt-3 divide-y divide-border/70">
                 {working.map((item) => (
-                  <button
+                  <Link
                     key={item.id}
+                    href={`/items/${item.id}`}
                     className="group flex min-h-[76px] w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20"
                   >
                     <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">
@@ -627,7 +610,7 @@ export default function Home() {
                         {item.stage} · {relativeTime(item.updatedAt)}
                       </span>
                     </span>
-                  </button>
+                  </Link>
                 ))}
               </div>
             )}

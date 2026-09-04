@@ -103,24 +103,23 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
 - [ ] Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and
       redeploy.
 - [ ] Decide the production identity boundary after checking trusted-device conventions.
-- [ ] Build an item detail page/route. Currently there is none at all —
-      homepage attention/working rows render as inert `<button>`s with no
-      click handler (noticed directly by the project owner while testing:
-      "there's nothing I can do on the homepage"). Per `DESIGN_GUIDE.md`'s
-      progressive-disclosure principle this was always the intent, just not
-      built. Needs: `GET /api/items/[id]` + a repository method for full
-      facts/evidence (not just the homepage summary), a page showing photos
-      and every fact with its confidence/evidence, a real "answer the open
-      question" action for `NEEDS_INFORMATION` items (writes a
-      `user_confirmed`/`user_evidence` fact and re-queues), and at least a
-      retry action for `FAILED` items. Per the project owner (2026-09-04),
-      this should also surface the `identification_runs` build log (already
-      recorded, see above — just needs a read path/viewer) per item, and let
-      the user manually retry/replay any step. Explicit design principle:
+- [x] Item detail page/route (`/items/[id]`). Homepage rows now link here
+      instead of being inert `<button>`s. Shows photos (HEIC converted to
+      JPEG on the fly for browser display, same converter the worker uses),
+      every fact with its confidence/evidence/origin/timestamp, and the full
+      `identification_runs` build log per attempt (outcome, model, real
+      token counts, duration, and — in a `<details>` expander — the raw
+      response JSON or error). A `FAILED` item gets a manual **Retry**
+      button (`POST /api/items/[id]/retry`) that resets the job to `QUEUED`
+      with a fresh attempt count and the item to `INBOX`; this is a manual
+      override, not tied to any auto-retry policy, per the project owner's
       "this is a tool that works for me, not the other way round" — auto-
-      retry (e.g. on a rate limit) is a nice-to-have convenience, but manual
-      override of anything must always be available, never gated behind
-      auto-retry logic succeeding or failing first.
+      retry (already exists, exponential backoff) is a convenience, manual
+      override must always be available regardless of what auto-retry is
+      doing. Verified live 2026-09-04 against the real HomePod mini item:
+      photos, facts and the build log (20,005/190 real tokens) all correct.
+      **Not built yet** (deliberately out of this pass — see below/next):
+      an "answer the open question" action for `NEEDS_INFORMATION` items.
 - [x] Item status must reflect what's *actually running*, not just the
       correct next lifecycle stage. Fixed 2026-09-04 for the one real
       instance: `RESEARCHING`'s stage label was "Researching recent sales,"
@@ -319,7 +318,7 @@ live; move both back together once this is genuinely production-ready.
 ## Test status
 
 - Build: passing (`npm run build`, 2026-09-04)
-- Unit/API contract tests: 46 passing, 1 skipped (`npm test`, 2026-09-04); the
+- Unit/API contract tests: 52 passing, 1 skipped (`npm test`, 2026-09-04); the
   skipped test exercises real HEIC decoding and only runs when
   `HEIC_TEST_FIXTURE` points at a local `.heic` file (see `DEVELOPMENT.md`) —
   run manually and confirmed passing against a real HEIC photo on 2026-09-04

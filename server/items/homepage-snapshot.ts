@@ -92,7 +92,10 @@ export function buildHomepageSnapshot(
   return { attention, working };
 }
 
-export function deriveActivityState(row: HomepageItemRow): ActivityState {
+export function deriveActivityState(row: {
+  status: HomepageItemRow['status'];
+  jobState?: HomepageItemRow['jobState'];
+}): ActivityState {
   if (row.status === 'FAILED') return 'errored';
   if (row.jobState === 'RUNNING') return 'working';
   if (row.jobState === 'QUEUED') return 'waiting';

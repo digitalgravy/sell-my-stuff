@@ -305,19 +305,59 @@ snags worth knowing about before touching deploy again:
   post-deploy. Will recur on every other project's first deploy until fixed
   in Overseer's `deploy.ts` (see PROJECT_STATUS.md's "Known bugs").
 
+## Real-photo verification, item status accuracy, item detail page (2026-09-04)
+
+All done in one session, in this order — see PROJECT_STATUS.md's "Recently
+completed" for full detail on each:
+
+- Ran a real capture → worker → facts-written test end to end (Apple
+  HomePod mini, 98% confidence, real label text read correctly). Confirmed
+  the whole pipeline works against real infrastructure.
+- Found and fixed a real honesty bug the project owner caught directly:
+  `RESEARCHING` items showed "Researching recent sales" when literally
+  nothing processes that status (no second job type exists). Generalized
+  the fix into `deriveActivityState()` (`homepage-snapshot.ts`) — a
+  Working/Waiting/Paused/Errored pill derived from real `jobs.state`, not
+  asserted from lifecycle status. "Paused" is the honest catch-all for
+  "mid-pipeline, nothing queued or running" and needs no update for any
+  future stage that stalls the same way.
+- Added `identification_runs` (migration 0004): a per-attempt "build log"
+  with the full raw vision response (every candidate, not just the
+  leading one), provider/model, real token usage, and errors — previously
+  discarded entirely.
+- Built the item detail page (`/items/[id]`), replacing inert homepage
+  buttons: photos (HEIC converted to JPEG on the fly — new
+  `GET /api/items/[id]/photos/[photoId]` route, reusing the worker's own
+  `HeicPhotoConverter`), every fact, and the build log per attempt. A
+  `FAILED` item gets a manual **Retry** button
+  (`POST /api/items/[id]/retry`) — resets the job to `QUEUED`/attempt 0 and
+  the item to `INBOX`. Explicit project-owner design principle: this is
+  manual override, always available, never gated behind auto-retry
+  succeeding or failing first ("a tool that works for me, not the other
+  way round"). New port: `server/items/item-detail-repository.ts` +
+  `postgres-item-detail-repository.ts`.
+- **Not built**: an "answer the open question" action for
+  `NEEDS_INFORMATION` items — the detail page shows facts but has no write
+  action yet for user-supplied answers.
+
 ## Exact next action
 
-1. Run an actual real-photo capture → worker → facts-written test locally
-   (`CAPTURE_API_ENABLED=true`, `SELL_STORAGE_PATH` set, `npm run worker:dev`)
-   — no longer infra-blocked (`ANTHROPIC_API_KEY`/`DATABASE_URL` both
-   resolve via `.env.local`; migrations are already applied to the real DB).
-2. Provision a durable upload storage volume (the manifest's
+1. Build the "answer the open question" action for `NEEDS_INFORMATION`
+   items on the item detail page (writes a `user_confirmed`/`user_evidence`
+   fact, re-queues research) — the one deliberately-deferred piece of the
+   detail page above.
+2. Condition/damage/wear assessment — design already agreed with the
+   project owner (extends the existing automated-first, confidence-gated
+   pattern used for identity facts); see PROJECT_STATUS.md's "Next up" for
+   the full spec pointer (`BRIEF.md`'s "Condition model"/"Functional
+   testing" sections) and the open same-call-vs-separate-stage question.
+3. Provision a durable upload storage volume (the manifest's
    `container.volumes` already supports this — hostPath/containerPath/
    readOnly — no new Overseer capability needed) and redeploy — this is a
    redeploy of an already-existing container, so only the container proposal
    is created, not new DNS/proxy proposals.
-3. Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and redeploy.
-4. Consider raising the `.internal`-vs-`.26fe.uk` NPM naming bug with the
+4. Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and redeploy.
+5. Consider raising the `.internal`-vs-`.26fe.uk` NPM naming bug with the
    Overseer building system so it doesn't need manual correction again.
 
 ## Handoff checklist
