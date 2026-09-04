@@ -7,7 +7,10 @@ Last updated: 2026-09-04
 Sell My Stuff is a self-hosted, mobile-first AI selling assistant. The core
 experience is photographs → autonomous identification/research → only necessary
 questions → a complete proposal → explicit approval → verified external action.
-Read `BRIEF.md` before changing scope.
+Read `BRIEF.md` before changing scope. Read `DESIGN_GUIDE.md` before changing
+any user-facing interface. Its adult, single-user voice rules are
+non-negotiable: avoid reassurance, encouragement, conversational filler and
+assistant-persona copy.
 
 ## Current state
 
@@ -80,6 +83,22 @@ Done in response to direct user feedback, in this order:
    native scale — bumped that line from `text-xs` to `text-sm` + `font-medium`,
    and brightened `--muted-foreground` in dark mode (`oklch(0.68 ...)` →
    `oklch(0.735 ...)`) for better contrast against the near-black background.
+5. On 2026-09-04 the user selected the proposed "Today View" direction because
+   it felt clear and adult rather than over-explanatory. `app/page.tsx` now uses
+   that structure: date/title and outcome summary, compact gradient capture
+   focus, equal-weight "Needs your attention" and "Working for you" panels,
+   then a subdued activity line. The complete photo intake state machine and
+   WebMCP registration remain intact. `app/globals.css` now uses a neutral
+   Apple-like black/white/blue system, and Inter is the sole UI/display face.
+   The Bricolage Grotesque import was removed.
+6. The first implementation did not match the mockup closely enough: the Inter
+   CSS variable was attached below the element consuming it, so the browser
+   visibly fell back to serif, and the capture card retained a blue/violet
+   gradient. This was corrected by applying the font variables to `<html>` and
+   the concrete Inter class to `<body>`, making the capture surface neutral,
+   removing violet from the palette, and replacing "Ready when you are / Got
+   something else to sell?" with the direct label "Add an item". Keep future
+   personal-tool copy terse and functional.
 
 Verified visually via the `claude-in-chrome` skill after each pass, plus
 `typecheck`/`lint`/`test`/`build` every time. Not yet re-confirmed with the
@@ -192,7 +211,7 @@ See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
 ## Handoff checklist
 
 1. Read `BRIEF.md`, then `OVERSEER-INFORMATION.md`, this file,
-   `PROJECT_STATUS.md`, `ROADMAP.md`, and the relevant ADRs.
+   `PROJECT_STATUS.md`, `ROADMAP.md`, `DESIGN_GUIDE.md`, and the relevant ADRs.
 2. Fetch `origin/main`; do not treat an older local `main` as authoritative.
 3. Preserve `CAPTURE_API_ENABLED=false` until Postgres, migrations and the
    durable upload volume have been provisioned and verified.

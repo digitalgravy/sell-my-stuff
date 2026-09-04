@@ -83,6 +83,16 @@ token, or open the PR link the agent prints after pushing a feature branch.
 
 ## Recently completed
 
+- [x] Corrected the Today view implementation to match its mockup: fixed the
+      document-level Inter application, removed the blue/violet capture-card
+      treatment and replaced reassuring capture copy with terse functional text.
+- [x] Added `DESIGN_GUIDE.md` as the durable UI contract for future agents and
+      annotated the Today homepage at its key hierarchy and behaviour boundaries.
+- [x] Reworked the homepage into a restrained, Apple-inspired "Today" view:
+      compact daily outcomes, a single prominent capture action, clear
+      attention items and autonomous-work status. Preserved multi-photo,
+      drag/drop, clipboard, upload, error and success behaviour while replacing
+      the previous marketing-style hero and oversized capture surface.
 - [x] Merged foundations PR #1 at `40966a2`.
 - [x] Merged persistence PR #2 at `1f21d8c`.
 - [x] Replaced the Cloudflare-oriented prototype runtime with standard Next.js

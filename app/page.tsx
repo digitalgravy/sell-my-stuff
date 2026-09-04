@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ArrowRight,
   Camera,
   Check,
   ChevronRight,
-  CircleHelp,
+  CircleDollarSign,
   Clock3,
   ImagePlus,
   LoaderCircle,
@@ -17,7 +16,6 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -31,23 +29,23 @@ const queue = [
     detail: 'Checking the exact model and recent sales',
     state: 'Researching',
     progress: 64,
-    accent: 'from-[#dbe1f5] to-[#a7b3e0]',
-  },
-  {
-    name: 'NVIDIA graphics card',
-    detail: 'One label photo will confirm the variant',
-    state: 'Needs you',
-    progress: 82,
-    accent: 'from-[#dcd6f2] to-[#a99fda]',
+    icon: Sparkles,
   },
   {
     name: 'Sony headphones',
-    detail: 'Draft listing and valuation are ready',
+    detail: 'Draft listing and valuation complete',
     state: 'Ready',
     progress: 100,
-    accent: 'from-[#e5d3f5] to-[#bb98db]',
+    icon: Check,
   },
 ];
+
+const today = new Intl.DateTimeFormat('en-GB', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  timeZone: 'Europe/London',
+}).format(new Date());
 
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -141,6 +139,13 @@ export default function Home() {
     setUploadError(undefined);
   };
 
+  const resetCapture = () => {
+    photos.forEach((photo) => URL.revokeObjectURL(photo.url));
+    setPhotos([]);
+    setSubmitted(false);
+    setUploadError(undefined);
+  };
+
   const submitPhotos = async () => {
     setUploading(true);
     setUploadError(undefined);
@@ -167,136 +172,132 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-dvh overflow-hidden bg-background text-foreground">
-      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-[1480px] items-center justify-between px-4 sm:px-7 lg:px-10">
-          <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-[0_7px_18px_rgba(46,30,92,.18)]">
-              <Sparkles className="size-[18px]" aria-hidden="true" />
+    <main className="min-h-dvh bg-background text-foreground">
+      {/* Keep global chrome quiet: this is a personal working surface, not a marketing site. */}
+      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur-2xl">
+        <div className="mx-auto flex h-[60px] max-w-[1280px] items-center justify-between px-4 sm:px-7 lg:px-10">
+          <div className="flex items-center gap-2.5">
+            <div className="grid size-8 place-items-center rounded-[10px] bg-foreground text-background">
+              <Sparkles className="size-4" aria-hidden="true" />
             </div>
-            <div>
-              <p className="text-[17px] font-semibold leading-none tracking-[-0.025em]">
-                Sell My Stuff
-              </p>
-              <p className="mt-1 hidden text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground sm:block">
-                Photograph clutter. Turn it into money.
-              </p>
-            </div>
+            <p className="text-[15px] font-semibold tracking-[-0.025em]">
+              Sell My Stuff
+            </p>
           </div>
+
           <nav
-            className="hidden items-center gap-1 md:flex"
+            className="hidden items-center gap-7 text-[13px] font-medium md:flex"
             aria-label="Main navigation"
           >
-            <Button
-              variant="ghost"
-              className="h-10 rounded-xl px-4 text-primary"
-            >
-              Home
-            </Button>
-            <Button
-              variant="ghost"
-              className="h-10 rounded-xl px-4 text-muted-foreground"
-            >
+            <button className="text-foreground">Home</button>
+            <button className="text-muted-foreground transition-colors hover:text-foreground">
               Items
-            </Button>
-            <Button
-              variant="ghost"
-              className="h-10 rounded-xl px-4 text-muted-foreground"
-            >
+            </button>
+            <button className="text-muted-foreground transition-colors hover:text-foreground">
               Sales
-            </Button>
+            </button>
           </nav>
+
           <Button
             variant="ghost"
             size="icon-lg"
-            className="rounded-xl md:hidden"
+            className="size-11 rounded-full md:hidden"
             aria-label="Open navigation"
           >
             <Menu />
           </Button>
-          <Button
-            variant="outline"
-            className="hidden h-10 rounded-xl bg-card/70 px-4 md:inline-flex"
+          <button
+            className="hidden size-8 place-items-center rounded-full border border-border bg-card text-[11px] font-semibold md:grid"
+            aria-label="Open settings"
           >
-            Settings
-          </Button>
+            SM
+          </button>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1480px] gap-10 px-4 pb-24 pt-7 sm:px-7 sm:pt-10 lg:grid-cols-[minmax(0,1.45fr)_minmax(330px,.75fr)] lg:px-10 lg:pt-12">
-        <section className="min-w-0">
-          <div className="mb-7 max-w-2xl">
-            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.17em] text-primary/70">
-              <span className="size-1.5 rounded-full bg-accent-strong" />
-              Ready when you are
+      <div className="mx-auto max-w-[1280px] px-4 pb-20 pt-8 sm:px-7 sm:pt-11 lg:px-10 lg:pt-14">
+        {/* The first read is temporal and operational: what today looks like, then what to do. */}
+        <section className="flex flex-col gap-7 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p
+              className="text-[13px] font-medium text-muted-foreground"
+              suppressHydrationWarning
+            >
+              {today}
             </p>
-            <h1 className="font-display text-[clamp(2.25rem,6vw,4.75rem)] font-semibold leading-[0.94] tracking-[-0.055em] text-balance">
-              What are we selling?
+            <h1 className="mt-1 text-[clamp(2.75rem,6vw,4.5rem)] font-semibold leading-none tracking-[-0.065em]">
+              Today
             </h1>
-            <p className="mt-4 max-w-xl text-[15px] leading-6 text-muted-foreground sm:text-base">
-              Take a few photos. I’ll identify the item, research it, and only
-              come back if I genuinely need something from you.
-            </p>
           </div>
 
-          <div
-            className={cn(
-              'capture-surface relative min-h-[360px] rounded-[2rem] border p-4 transition sm:min-h-[440px] sm:p-6',
-              dragging && 'border-primary/60 bg-primary/[0.035]',
-            )}
-            onDragEnter={(event) => {
-              event.preventDefault();
-              setDragging(true);
-            }}
-            onDragOver={(event) => event.preventDefault()}
-            onDragLeave={(event) => {
-              if (event.currentTarget === event.target) setDragging(false);
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragging(false);
-              addFiles(event.dataTransfer.files);
-            }}
-          >
-            <input
-              ref={inputRef}
-              className="sr-only"
-              type="file"
-              accept="image/jpeg,image/png,image/heic,image/heif"
-              capture="environment"
-              multiple
-              onChange={(event) => {
-                if (event.target.files) addFiles(event.target.files);
-                event.target.value = '';
-              }}
-              aria-label="Choose photographs"
-            />
+          <dl className="grid grid-cols-3 gap-6 sm:gap-9">
+            {[
+              ['14', 'items cleared'],
+              ['£742', 'realised'],
+              ['£1,180', 'in progress'],
+            ].map(([value, label]) => (
+              <div key={label} className="flex flex-col sm:items-end">
+                <dt className="order-2 mt-0.5 text-[11px] text-muted-foreground sm:text-xs">
+                  {label}
+                </dt>
+                <dd className="order-1 text-lg font-semibold tracking-[-0.035em] sm:text-2xl">
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
 
-            {photos.length === 0 ? (
-              <div className="flex min-h-[326px] flex-col items-center justify-center px-4 text-center sm:min-h-[392px]">
-                <button
-                  type="button"
-                  onClick={() => inputRef.current?.click()}
-                  className="camera-button group relative grid size-28 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_22px_55px_rgba(46,30,92,.25)] transition hover:-translate-y-1 hover:shadow-[0_28px_65px_rgba(46,30,92,.3)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 active:scale-[.98] motion-reduce:transform-none sm:size-32"
-                  aria-label="Take or choose photos"
+        {/* Capture stays prominent but compact until the user starts adding photos. */}
+        {/* Drag and drop augments the fully accessible file input and button. */}
+        {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+        <section
+          className={cn(
+            'capture-focus mt-8 overflow-hidden rounded-[1.75rem] border p-5 transition-colors sm:p-7',
+            dragging && 'border-primary/50 bg-primary/[0.055]',
+          )}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={(event) => {
+            if (event.currentTarget === event.target) setDragging(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            addFiles(event.dataTransfer.files);
+          }}
+          aria-labelledby="capture-heading"
+        >
+          <input
+            ref={inputRef}
+            className="sr-only"
+            type="file"
+            accept="image/jpeg,image/png,image/heic,image/heif"
+            capture="environment"
+            multiple
+            onChange={(event) => {
+              if (event.target.files) addFiles(event.target.files);
+              event.target.value = '';
+            }}
+            aria-label="Choose photographs"
+          />
+
+          {photos.length === 0 ? (
+            <div className="grid items-center gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-10">
+              <div>
+                <h2
+                  id="capture-heading"
+                  className="text-[clamp(1.6rem,4vw,2.3rem)] font-semibold leading-tight tracking-[-0.045em]"
                 >
-                  <Camera
-                    className="size-9 transition-transform group-hover:scale-105 sm:size-10"
-                    strokeWidth={1.8}
-                    aria-hidden="true"
-                  />
-                  <span className="absolute -right-1 top-2 grid size-8 place-items-center rounded-full border-4 border-card bg-accent-strong text-white">
-                    <ImagePlus className="size-4" />
-                  </span>
-                </button>
-                <h2 className="font-display mt-7 text-xl font-semibold tracking-[-0.025em]">
-                  Take or add photos
+                  Add an item
                 </h2>
-                <p className="mt-2 max-w-sm text-[15px] leading-6 text-muted-foreground">
-                  Front, back, labels and any wear are useful. Add several items
-                  now—you don’t need to wait between them.
+                <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground sm:text-[15px]">
+                  Photos start identification and research.
                 </p>
-                <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm font-medium text-muted-foreground">
+                <div className="mt-4 hidden items-center gap-5 text-xs font-medium text-muted-foreground md:flex">
                   <span className="flex items-center gap-1.5">
                     <Upload className="size-3.5" /> Drop files
                   </span>
@@ -306,92 +307,109 @@ export default function Home() {
                   <span>HEIC · JPEG · PNG</span>
                 </div>
               </div>
-            ) : submitted ? (
-              <div className="flex min-h-[326px] flex-col items-center justify-center px-4 text-center sm:min-h-[392px]">
-                <div className="grid size-20 place-items-center rounded-full bg-success-soft text-success">
-                  <Check className="size-9" strokeWidth={2} />
-                </div>
-                <Badge className="mt-6 bg-primary/10 text-primary">
-                  Research started
-                </Badge>
-                <h2 className="font-display mt-4 text-2xl font-semibold tracking-[-0.03em]">
-                  I’ll take it from here
-                </h2>
-                <p className="mt-2 max-w-md text-[15px] leading-6 text-muted-foreground">
-                  Your{' '}
-                  {photos.length === 1
-                    ? 'photo is'
-                    : `${photos.length} photos are`}{' '}
-                  queued. You can close this page or add another item while the
-                  work continues.
+              <Button
+                className="h-12 w-full rounded-full px-6 text-[15px] shadow-[0_8px_24px_rgba(0,122,255,.22)] sm:w-auto"
+                onClick={() => inputRef.current?.click()}
+              >
+                <Camera data-icon="inline-start" /> Add photos
+              </Button>
+            </div>
+          ) : submitted ? (
+            <div className="grid items-center gap-5 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+              <div className="grid size-12 place-items-center rounded-full bg-success-soft text-success">
+                <Check className="size-5" strokeWidth={2.2} />
+              </div>
+              <div>
+                <p className="text-[13px] font-medium text-success">
+                  Identification started
                 </p>
-                <Button
-                  className="mt-7 h-11 rounded-xl px-5"
-                  onClick={() => {
-                    photos.forEach((photo) => URL.revokeObjectURL(photo.url));
-                    setPhotos([]);
-                    setSubmitted(false);
-                    setUploadError(undefined);
-                  }}
+                <h2
+                  id="capture-heading"
+                  className="mt-1 text-2xl font-semibold tracking-[-0.04em]"
                 >
-                  Photograph another item <Camera data-icon="inline-end" />
+                  {photos.length === 1
+                    ? '1 photo queued'
+                    : `${photos.length} photos queued`}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Status will appear below.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                className="h-11 rounded-full bg-card/70 px-5"
+                onClick={resetCapture}
+              >
+                <Camera data-icon="inline-start" /> Add another item
+              </Button>
+            </div>
+          ) : (
+            <div>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[13px] font-medium text-muted-foreground">
+                    New item
+                  </p>
+                  <h2
+                    id="capture-heading"
+                    className="mt-1 text-2xl font-semibold tracking-[-0.04em]"
+                  >
+                    {photos.length} {photos.length === 1 ? 'photo' : 'photos'}
+                  </h2>
+                </div>
+                <Button
+                  variant="outline"
+                  className="h-11 rounded-full bg-card/70 px-5"
+                  onClick={() => inputRef.current?.click()}
+                >
+                  <ImagePlus data-icon="inline-start" /> Add more
                 </Button>
               </div>
-            ) : (
-              <div className="flex min-h-[326px] flex-col sm:min-h-[392px]">
-                <div className="flex items-center justify-between px-1 pb-4">
-                  <div>
-                    <p className="text-lg font-semibold">
-                      {photos.length} {photos.length === 1 ? 'photo' : 'photos'}{' '}
-                      added
-                    </p>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      Add more angles if they’ll help identify the item.
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 rounded-xl"
-                    onClick={() => inputRef.current?.click()}
+
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                {photos.map((photo) => (
+                  <figure
+                    key={photo.id}
+                    className="group relative aspect-square overflow-hidden rounded-2xl bg-muted"
                   >
-                    <ImagePlus data-icon="inline-start" /> Add more
-                  </Button>
-                </div>
-                <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
-                  {photos.map((photo) => (
-                    <figure
-                      key={photo.id}
-                      className="group relative min-h-36 overflow-hidden rounded-2xl bg-muted"
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={photo.name}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(photo)}
+                      className="absolute right-2 top-2 grid size-9 place-items-center rounded-full bg-black/60 text-white backdrop-blur transition hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      aria-label={`Remove ${photo.name}`}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={photo.url}
-                        alt={photo.name}
-                        className="h-full w-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removePhoto(photo)}
-                        className="absolute right-2 top-2 grid size-9 place-items-center rounded-full bg-black/55 text-white backdrop-blur transition hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                        aria-label={`Remove ${photo.name}`}
-                      >
-                        <X className="size-4" />
-                      </button>
-                    </figure>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => inputRef.current?.click()}
-                    className="grid min-h-36 place-items-center rounded-2xl border border-dashed border-primary/25 bg-primary/[0.025] text-primary transition hover:bg-primary/[0.055] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20"
+                      <X className="size-4" />
+                    </button>
+                  </figure>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => inputRef.current?.click()}
+                  className="grid aspect-square place-items-center rounded-2xl border border-dashed border-primary/30 bg-card/35 text-primary transition hover:bg-card/60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20"
+                >
+                  <span className="flex flex-col items-center gap-2 text-sm font-medium">
+                    <ImagePlus className="size-5" /> Add another
+                  </span>
+                </button>
+              </div>
+
+              <div className="mt-5 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-end">
+                {uploadError ? (
+                  <p
+                    className="mr-auto text-sm font-medium text-destructive"
+                    role="alert"
                   >
-                    <span className="flex flex-col items-center gap-2 text-sm font-medium">
-                      <ImagePlus className="size-6" /> Add another
-                    </span>
-                  </button>
-                </div>
+                    {uploadError}
+                  </p>
+                ) : null}
                 <Button
-                  className="mt-4 h-12 w-full rounded-2xl text-[15px] shadow-[0_12px_28px_rgba(46,30,92,.18)]"
+                  className="h-12 rounded-full px-6 text-[15px] shadow-[0_8px_24px_rgba(0,122,255,.2)]"
                   onClick={submitPhotos}
                   disabled={uploading}
                 >
@@ -409,156 +427,123 @@ export default function Home() {
                     </>
                   )}
                 </Button>
-                {uploadError ? (
-                  <p
-                    className="mt-3 text-center text-sm font-medium text-destructive"
-                    role="alert"
-                  >
-                    {uploadError}
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-7 grid grid-cols-3 gap-3">
-            {[
-              ['14', 'items cleared'],
-              ['£742', 'realised'],
-              ['~£1,180', 'waiting'],
-            ].map(([value, label]) => (
-              <div
-                key={label}
-                className="rounded-2xl border border-border/70 bg-card/60 px-3 py-4 sm:px-5"
-              >
-                <p className="text-lg font-semibold tracking-[-0.03em] sm:text-2xl">
-                  {value}
-                </p>
-                <p className="mt-1 text-xs leading-4 text-muted-foreground sm:text-sm">
-                  {label}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <aside className="min-w-0 lg:pt-5">
-          <section className="rounded-[1.75rem] border border-border/70 bg-card/85 p-5 shadow-[0_18px_60px_rgba(18,16,36,.07)] sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-strong">
-                  3 things need you
-                </p>
-                <h2 className="font-display mt-2 text-2xl font-semibold tracking-[-0.035em]">
-                  Tiny actions, big progress
-                </h2>
-              </div>
-              <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-warning-soft text-warning">
-                <CircleHelp className="size-5" />
               </div>
             </div>
-            <button className="mt-6 flex w-full items-center gap-4 rounded-2xl bg-warning-soft/70 p-4 text-left transition hover:bg-warning-soft focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20">
-              <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-card text-warning shadow-sm">
-                <Camera className="size-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold">NVIDIA graphics card</p>
-                <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                  Photograph the label on the back so I can confirm the model.
-                </p>
-              </div>
-              <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
-            </button>
-            <button className="mt-2 flex w-full items-center gap-4 rounded-2xl p-4 text-left transition hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20">
-              <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-muted text-primary">
-                <PackageCheck className="size-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold">Sony headphones</p>
-                <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                  Review the £84 sale proposal.
-                </p>
-              </div>
-              <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
-            </button>
-            <Button
-              variant="ghost"
-              className="mt-2 h-10 w-full rounded-xl text-muted-foreground"
-            >
-              See all actions <ArrowRight data-icon="inline-end" />
-            </Button>
+          )}
+        </section>
+
+        {/* Separate human decisions from autonomous work; never make background activity look actionable. */}
+        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          <section className="rounded-[1.5rem] border border-border/75 bg-card p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-[17px] font-semibold tracking-[-0.03em]">
+                Needs your attention
+              </h2>
+              <Button
+                variant="ghost"
+                className="h-9 rounded-full px-3 text-xs text-primary"
+              >
+                See all
+              </Button>
+            </div>
+
+            <div className="mt-3 divide-y divide-border/70">
+              <button className="group flex min-h-[76px] w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20">
+                <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-warning-soft text-warning">
+                  <Camera className="size-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">
+                    Photograph the graphics card label
+                  </span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground sm:text-[13px]">
+                    NVIDIA graphics card · model confirmation
+                  </span>
+                </span>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </button>
+              <button className="group flex min-h-[76px] w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20">
+                <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">
+                  <CircleDollarSign className="size-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">
+                    Review the £84 sale proposal
+                  </span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground sm:text-[13px]">
+                    Sony headphones · ready to approve
+                  </span>
+                </span>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </div>
           </section>
 
-          <section className="mt-5">
-            <div className="mb-3 flex items-center justify-between px-1">
-              <div>
-                <h2 className="text-lg font-semibold tracking-[-0.025em]">
-                  Working in the background
-                </h2>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  Everything keeps moving while you’re away.
-                </p>
-              </div>
+          <section className="rounded-[1.5rem] border border-border/75 bg-card p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-[17px] font-semibold tracking-[-0.03em]">
+                Working for you
+              </h2>
               <Button
                 variant="ghost"
                 size="icon"
-                className="rounded-xl"
+                className="rounded-full text-muted-foreground"
                 aria-label="Search items"
               >
                 <Search />
               </Button>
             </div>
-            <div className="space-y-2">
-              {queue.map((item, index) => (
-                <button
-                  key={item.name}
-                  className="queue-row group flex w-full items-center gap-3 rounded-2xl border border-border/65 bg-card/65 p-3 text-left transition hover:-translate-y-0.5 hover:bg-card focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20 motion-reduce:transform-none"
-                >
-                  <div
-                    className={cn(
-                      'grid size-14 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-primary/65',
-                      item.accent,
-                    )}
+
+            <div className="mt-3 divide-y divide-border/70">
+              {queue.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.name}
+                    className="group flex min-h-[76px] w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20"
                   >
-                    {index === 0 ? (
-                      <Sparkles className="size-5" />
-                    ) : index === 1 ? (
-                      <Clock3 className="size-5" />
-                    ) : (
-                      <Check className="size-5" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-base font-semibold">
-                        {item.name}
-                      </p>
-                      <span
-                        className={cn(
-                          'shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em]',
-                          item.state === 'Needs you'
-                            ? 'text-warning'
-                            : item.state === 'Ready'
+                    <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">
+                      <Icon className="size-4.5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-semibold">
+                          {item.name}
+                        </span>
+                        <span
+                          className={cn(
+                            'shrink-0 text-[11px] font-semibold',
+                            item.state === 'Ready'
                               ? 'text-success'
-                              : 'text-primary/65',
-                        )}
-                      >
-                        {item.state}
+                              : 'text-primary',
+                          )}
+                        >
+                          {item.state}
+                        </span>
                       </span>
-                    </div>
-                    <p className="mt-1 truncate text-sm font-medium text-muted-foreground">
-                      {item.detail}
-                    </p>
-                    <Progress
-                      value={item.progress}
-                      className="mt-2 [&_[data-slot=progress-indicator]]:bg-accent-strong [&_[data-slot=progress-track]]:h-1"
-                    />
-                  </div>
-                </button>
-              ))}
+                      <span className="mt-1 block truncate text-xs text-muted-foreground sm:text-[13px]">
+                        {item.detail}
+                      </span>
+                      {item.progress < 100 ? (
+                        <Progress
+                          value={item.progress}
+                          aria-label={`${item.name} progress`}
+                          className="mt-2 [&_[data-slot=progress-indicator]]:bg-primary [&_[data-slot=progress-track]]:h-[3px]"
+                        />
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </section>
-        </aside>
+        </div>
+
+        <section className="mt-5 flex items-center gap-3 rounded-[1.25rem] border border-border/60 bg-card/55 px-4 py-3 text-sm text-muted-foreground sm:px-5">
+          <Clock3 className="size-4 shrink-0" />
+          <p>Last activity: Magic Keyboard research updated 8 minutes ago.</p>
+          <PackageCheck className="ml-auto hidden size-4 shrink-0 text-success sm:block" />
+        </section>
       </div>
     </main>
   );

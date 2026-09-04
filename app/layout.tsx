@@ -1,13 +1,9 @@
 import type { Metadata, Viewport } from 'next';
-import { Geist_Mono, Bricolage_Grotesque, Inter } from 'next/font/google';
+import { Geist_Mono, Inter } from 'next/font/google';
 import './globals.css';
 
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
-const bricolageGrotesque = Bricolage_Grotesque({
-  variable: '--font-bricolage-grotesque',
   subsets: ['latin'],
 });
 const inter = Inter({ variable: '--font-inter', subsets: ['latin'] });
@@ -52,12 +48,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistMono.variable} ${bricolageGrotesque.variable} ${inter.variable} antialiased`}
-      >
-        {children}
-      </body>
+    <html
+      lang="en"
+      className={`${geistMono.variable} ${inter.variable}`}
+    >
+      <body className={`${inter.className} antialiased`}>{children}</body>
     </html>
   );
 }
