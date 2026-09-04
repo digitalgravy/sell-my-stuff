@@ -187,6 +187,21 @@ live; move both back together once this is genuinely production-ready.
 
 ## Recently completed
 
+- [x] Added an activity-state pill (Working/Waiting/Paused/Errored) to
+      homepage rows, generalizing the RESEARCHING label fix above into a
+      real, reusable mechanism instead of a one-off string change.
+      `deriveActivityState()` (`homepage-snapshot.ts`, pure and unit-tested)
+      derives it from real `jobs.state` — RUNNING → Working, QUEUED →
+      Waiting, FAILED status → Errored, and anything mid-pipeline with no
+      active/queued job at all → Paused (the honest catch-all: today this
+      only ever fires for RESEARCHING, but automatically catches any future
+      stalled stage — a crashed job that left no trace, a not-yet-built
+      capability — without needing a new special case each time).
+      `NEEDS_INFORMATION` items deliberately get no pill — they're correctly
+      blocked on the user, not "paused". `PostgresHomepageRepository` now
+      loads each item's latest job state alongside its error. Verified live:
+      the HomePod mini item correctly shows an amber "Paused" pill next to
+      "Identified — research not yet available".
 - [x] Added a per-attempt identification "build log" (`identification_runs`
       table, migration 0004): the full raw vision response (every candidate,
       not just the leading one, plus open questions), which model and
@@ -304,7 +319,7 @@ live; move both back together once this is genuinely production-ready.
 ## Test status
 
 - Build: passing (`npm run build`, 2026-09-04)
-- Unit/API contract tests: 43 passing, 1 skipped (`npm test`, 2026-09-04); the
+- Unit/API contract tests: 46 passing, 1 skipped (`npm test`, 2026-09-04); the
   skipped test exercises real HEIC decoding and only runs when
   `HEIC_TEST_FIXTURE` points at a local `.heic` file (see `DEVELOPMENT.md`) —
   run manually and confirmed passing against a real HEIC photo on 2026-09-04

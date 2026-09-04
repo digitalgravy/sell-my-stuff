@@ -17,10 +17,12 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isSupportedImage } from '@/lib/capture-policy';
 import type {
+  ActivityState,
   AttentionItem,
   WorkingItem,
 } from '@/server/items/homepage-snapshot';
@@ -33,6 +35,22 @@ function relativeTime(isoTimestamp: string): string {
   return formatDistanceToNowStrict(new Date(isoTimestamp), {
     addSuffix: true,
   });
+}
+
+const ACTIVITY_BADGE: Record<ActivityState, { label: string; className?: string }> = {
+  working: { label: 'Working', className: 'border-transparent bg-primary/10 text-primary' },
+  waiting: { label: 'Waiting' },
+  paused: { label: 'Paused', className: 'border-transparent bg-warning-soft text-warning' },
+  errored: { label: 'Errored', className: 'border-transparent bg-destructive/10 text-destructive' },
+};
+
+function ActivityBadge({ activity }: { activity: ActivityState }) {
+  const { label, className } = ACTIVITY_BADGE[activity];
+  return (
+    <Badge variant="secondary" className={cn('shrink-0', className)}>
+      {label}
+    </Badge>
+  );
 }
 
 const HOMEPAGE_POLL_INTERVAL_MS = 8_000;
@@ -535,8 +553,13 @@ export default function Home() {
                       <CircleHelp className="size-5" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold">
-                        {item.title}
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-semibold">
+                          {item.title}
+                        </span>
+                        {item.activity ? (
+                          <ActivityBadge activity={item.activity} />
+                        ) : null}
                       </span>
                       <span className="mt-1 block truncate text-xs text-muted-foreground sm:text-[13px]">
                         {item.reason} · {relativeTime(item.updatedAt)}
@@ -594,8 +617,11 @@ export default function Home() {
                       <Sparkles className="size-4.5" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="truncate text-sm font-semibold">
-                        {item.title}
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-semibold">
+                          {item.title}
+                        </span>
+                        <ActivityBadge activity={item.activity} />
                       </span>
                       <span className="mt-1 block truncate text-xs text-muted-foreground sm:text-[13px]">
                         {item.stage} · {relativeTime(item.updatedAt)}

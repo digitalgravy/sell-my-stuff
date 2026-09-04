@@ -1,10 +1,22 @@
 import type { HomepageItemFacts, HomepageItemRow } from './homepage-repository';
 
+/**
+ * What the item is actually doing right now, derived from real job state —
+ * never asserted from the lifecycle status alone. "paused" is the honest
+ * catch-all: mid-pipeline, not failed, but nothing is queued or running for
+ * it (today: only RESEARCHING, since no research job exists yet — but this
+ * derivation needs no update when that changes, or if anything else ever
+ * stalls the same way).
+ */
+export type ActivityState = 'working' | 'waiting' | 'paused' | 'errored';
+
 export interface AttentionItem {
   id: string;
   title: string;
   reason: string;
   updatedAt: string;
+  /** Only present for FAILED items — NEEDS_INFORMATION is correctly blocked on the user, not "paused". */
+  activity?: ActivityState;
 }
 
 export interface WorkingItem {
@@ -12,6 +24,7 @@ export interface WorkingItem {
   title: string;
   stage: string;
   updatedAt: string;
+  activity: ActivityState;
 }
 
 export interface HomepageSnapshot {
@@ -63,6 +76,7 @@ export function buildHomepageSnapshot(
         title,
         reason: summarizeError(row.lastError),
         updatedAt,
+        activity: 'errored',
       });
     } else {
       working.push({
@@ -70,11 +84,19 @@ export function buildHomepageSnapshot(
         title,
         stage: WORKING_STAGE_LABEL[row.status] ?? row.status,
         updatedAt,
+        activity: deriveActivityState(row),
       });
     }
   }
 
   return { attention, working };
+}
+
+export function deriveActivityState(row: HomepageItemRow): ActivityState {
+  if (row.status === 'FAILED') return 'errored';
+  if (row.jobState === 'RUNNING') return 'working';
+  if (row.jobState === 'QUEUED') return 'waiting';
+  return 'paused';
 }
 
 function displayTitle(facts: HomepageItemFacts): string {

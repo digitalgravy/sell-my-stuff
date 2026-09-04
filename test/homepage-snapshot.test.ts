@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildHomepageSnapshot,
+  deriveActivityState,
   summarizeError,
 } from '../server/items/homepage-snapshot';
 import type { HomepageItemRow } from '../server/items/homepage-repository';
@@ -70,6 +71,43 @@ void test('routes non-NEEDS_INFORMATION statuses into working with a stage label
   );
 });
 
+void test('deriveActivityState reflects real job state, not just lifecycle status', () => {
+  assert.equal(deriveActivityState(row({ status: 'FAILED' })), 'errored');
+  assert.equal(
+    deriveActivityState(row({ status: 'IDENTIFYING', jobState: 'RUNNING' })),
+    'working',
+  );
+  assert.equal(
+    deriveActivityState(row({ status: 'IDENTIFYING', jobState: 'QUEUED' })),
+    'waiting',
+  );
+  // RESEARCHING with no queued/running job -- no processor exists yet, so
+  // this must read as stalled, not as quietly "in progress".
+  assert.equal(
+    deriveActivityState(row({ status: 'RESEARCHING', jobState: undefined })),
+    'paused',
+  );
+  assert.equal(
+    deriveActivityState(
+      row({ status: 'IDENTIFYING', jobState: 'SUCCEEDED' }),
+    ),
+    'paused',
+  );
+});
+
+void test('working items carry the derived activity state', () => {
+  const snapshot = buildHomepageSnapshot([
+    row({ id: 'a', status: 'IDENTIFYING', jobState: 'RUNNING' }),
+    row({ id: 'b', status: 'IDENTIFYING', jobState: 'QUEUED' }),
+    row({ id: 'c', status: 'RESEARCHING', jobState: undefined }),
+  ]);
+
+  assert.deepEqual(
+    snapshot.working.map((item) => item.activity),
+    ['working', 'waiting', 'paused'],
+  );
+});
+
 void test('falls back to the raw status as a stage label for an unmapped status', () => {
   const snapshot = buildHomepageSnapshot([row({ status: 'VALUING' })]);
   assert.equal(snapshot.working[0]?.stage, 'VALUING');
@@ -90,6 +128,12 @@ void test('routes a FAILED item into attention with a summarized error reason', 
     snapshot.attention[0]?.reason,
     'Identification failed: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.',
   );
+  assert.equal(snapshot.attention[0]?.activity, 'errored');
+});
+
+void test('NEEDS_INFORMATION items carry no activity state — blocked on the user, not "paused"', () => {
+  const snapshot = buildHomepageSnapshot([row({ status: 'NEEDS_INFORMATION' })]);
+  assert.equal(snapshot.attention[0]?.activity, undefined);
 });
 
 void test('summarizeError extracts a provider API error message from JSON', () => {

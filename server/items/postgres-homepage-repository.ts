@@ -8,6 +8,7 @@ import type {
   HomepageItemFacts,
   HomepageItemRow,
   HomepageRepository,
+  JobStateValue,
 } from './homepage-repository';
 import type { ItemStatusValue } from './research-repository';
 
@@ -78,30 +79,32 @@ export class PostgresHomepageRepository implements HomepageRepository {
       factsByItem.set(row.itemId, entry);
     }
 
-    const failedItemIds = itemRows
-      .filter((row) => row.status === 'FAILED')
-      .map((row) => row.id);
-    const lastErrorByItem = await this.#loadLastErrors(database, failedItemIds);
+    const jobInfoByItem = await this.#loadJobInfo(
+      database,
+      itemRows.map((row) => row.id),
+    );
 
     return itemRows.map((row) => ({
       id: row.id,
       status: row.status,
       updatedAt: row.updatedAt,
       facts: factsByItem.get(row.id) ?? { openQuestions: [] },
-      lastError: lastErrorByItem.get(row.id),
+      jobState: jobInfoByItem.get(row.id)?.state,
+      lastError: jobInfoByItem.get(row.id)?.lastError,
     }));
   }
 
-  /** Most recent inspect_images job's error per item, for FAILED items only. */
-  async #loadLastErrors(
+  /** Most recent inspect_images job's state/error per item. */
+  async #loadJobInfo(
     database: ReturnType<typeof getDatabase>,
     itemIds: string[],
-  ): Promise<Map<string, string>> {
+  ): Promise<Map<string, { state: JobStateValue; lastError?: string }>> {
     if (itemIds.length === 0) return new Map();
 
     const rows = await database
       .select({
         itemId: jobs.itemId,
+        state: jobs.state,
         lastError: jobs.lastError,
       })
       .from(jobs)
@@ -113,13 +116,19 @@ export class PostgresHomepageRepository implements HomepageRepository {
       )
       .orderBy(desc(jobs.updatedAt));
 
-    const lastErrorByItem = new Map<string, string>();
+    const jobInfoByItem = new Map<
+      string,
+      { state: JobStateValue; lastError?: string }
+    >();
     for (const row of rows) {
-      if (!lastErrorByItem.has(row.itemId) && row.lastError) {
-        lastErrorByItem.set(row.itemId, row.lastError);
+      if (!jobInfoByItem.has(row.itemId)) {
+        jobInfoByItem.set(row.itemId, {
+          state: row.state,
+          lastError: row.lastError ?? undefined,
+        });
       }
     }
-    return lastErrorByItem;
+    return jobInfoByItem;
   }
 }
 
