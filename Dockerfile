@@ -2,7 +2,7 @@ FROM node:24-slim AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npm test && npm run typecheck && npm run lint && npm run build
 
