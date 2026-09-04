@@ -35,6 +35,8 @@ function relativeTime(isoTimestamp: string): string {
   });
 }
 
+const HOMEPAGE_POLL_INTERVAL_MS = 8_000;
+
 async function requestHomepageSnapshot(): Promise<HomepageSnapshot> {
   const response = await fetch('/api/items/homepage');
   if (!response.ok) throw new Error('Could not load current items');
@@ -87,6 +89,24 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Background work (identification, research) happens off-screen, so the
+  // page needs to notice on its own rather than only on load/submit. Stays
+  // quiet on failure -- a transient blip shouldn't flash an error over
+  // already-visible, still-correct data.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      requestHomepageSnapshot()
+        .then((data) => {
+          setAttention(data.attention);
+          setWorking(data.working);
+          setHomepageStatus('ready');
+        })
+        .catch(() => undefined);
+    }, HOMEPAGE_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, []);
 
   const addFiles = useCallback((files: FileList | File[]) => {
