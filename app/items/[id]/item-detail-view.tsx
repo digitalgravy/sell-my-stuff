@@ -216,22 +216,19 @@ export function ItemDetailView({ itemId }: { itemId: string }) {
               )}
             </section>
 
-            <section className="mt-6 rounded-[1.5rem] border border-border/75 bg-card p-5 sm:p-6">
-              <h2 className="text-[17px] font-semibold tracking-[-0.03em]">
-                Build log
-              </h2>
-              {detail.runs.length === 0 ? (
-                <p className="mt-3 text-sm text-muted-foreground">
-                  No identification runs yet.
-                </p>
-              ) : (
-                <div className="mt-3 space-y-2">
+            {detail.runs.length > 0 ? (
+              <details className="group mt-6 rounded-[1.25rem] border border-border/60 bg-card/55 open:bg-card">
+                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-muted-foreground group-open:text-foreground">
+                  Build log · {detail.runs.length}{' '}
+                  {detail.runs.length === 1 ? 'run' : 'runs'}
+                </summary>
+                <div className="space-y-2 px-4 pb-4 sm:px-6 sm:pb-6">
                   {detail.runs.map((run) => (
                     <RunLogEntry key={run.id} run={run} />
                   ))}
                 </div>
-              )}
-            </section>
+              </details>
+            ) : null}
           </>
         ) : null}
       </div>
