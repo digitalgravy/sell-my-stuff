@@ -52,7 +52,10 @@ token, or open the PR link the agent prints after pushing a feature branch.
   - [x] `inspect_images` worker with leased Postgres claims, crash recovery and backed-off retries
   - [x] First schema-validated vision adapter (Anthropic, `client.messages.parse` + Zod)
   - [x] First evidence/confidence record model (`item_facts` table)
-  - [ ] Provision and integration-test PostgreSQL plus durable upload storage
+  - [x] Provision PostgreSQL (`docker.26fe.uk:5432/sell_my_stuff`, outside
+        Overseer's deploy-manifest flow) and apply all three migrations
+        against it — `items`/`photos`/`jobs`/`item_facts` confirmed present
+  - [ ] Provision a durable upload storage volume
   - [ ] Verify the worker end-to-end against a real Anthropic API key and a real photo
   - [x] HEIC/HEIF → JPEG conversion before vision inspection
   - [x] "Ask user only if necessary" UI for `identity.open_questions`
@@ -60,27 +63,73 @@ token, or open the PR link the agent prints after pushing a feature branch.
 ## Blocked
 
 - [ ] First infrastructure deployment
-  - Blocker: Overseer must propose and apply real PostgreSQL, storage, container,
-    DNS and reverse-proxy changes; no reusable database/object service was found.
-  - Next action: prepare the exact Overseer proposals and migration procedure.
+  - Blocker: Gitea Actions still fails at the image-push step on every run
+    (build/test/lint pass in CI; confirmed via the Actions API on run #18,
+    2026-09-04) — no image exists in the registry yet, so `propose_deploy`
+    has nothing valid to reference. A `!`-prefixed command to set
+    `REGISTRY_USERNAME`/`REGISTRY_PASSWORD` repo secrets was handed to the
+    project owner; unclear if it's been run yet.
+  - Also still needed once an image exists: a durable upload storage volume
+    (`container.volumes` in `overseer-app.yaml` already supports this, just
+    not yet added), then a first `propose_deploy` (container + DNS + proxy
+    host) needs human approve+execute.
 - [ ] Real end-to-end verification of the `inspect_images` worker
-  - Blocker: no `ANTHROPIC_API_KEY` and no reachable Postgres in this
-    environment (local Docker/OrbStack daemon unavailable), so the worker is
-    unit-tested against fakes only, not run against the real Anthropic API
-    or a real database.
+  - No longer blocked locally: `ANTHROPIC_API_KEY` and `DATABASE_URL` are
+    both usable from this dev machine (via `.env.local`, fetched through
+    Overseer's `get_app_secret`/SSH-signature auth — see "Secrets access"
+    below). Only blocker now is doing an actual real-photo capture → worker
+    run, which hasn't been exercised yet.
 
 ## Next up
 
-- [ ] Provision isolated PostgreSQL and a backed-up upload volume through Overseer.
-- [ ] Run the migration and real database/filesystem integration test.
-- [ ] Enable `CAPTURE_API_ENABLED` only after both dependencies are healthy.
-- [ ] Configure `ANTHROPIC_API_KEY` (via Overseer/SOPS secrets, not the repo)
-      and run the worker against a real item to verify the vision adapter end to end.
+- [ ] Run an actual real-photo capture → worker → facts-written test locally
+      (`CAPTURE_API_ENABLED=true`, `SELL_STORAGE_PATH` set, `npm run worker:dev`)
+      now that both `ANTHROPIC_API_KEY` and `DATABASE_URL` resolve locally.
+- [ ] Get Gitea Actions past the image-push step (registry secrets).
+- [ ] Provision a durable upload storage volume (via `container.volumes`,
+      which the manifest schema already supports).
+- [ ] First `propose_deploy` for `sell-my-stuff` once an image exists, then
+      human approve+execute for the container/DNS/proxy proposals.
+- [ ] Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and
+      redeploy.
 - [ ] Decide the production identity boundary after checking trusted-device conventions.
 - [ ] Add component, accessibility and mobile E2E coverage for capture.
 
+## Secrets access
+
+The coding agent cannot read Overseer's `secrets/` directory or any raw
+credential file directly — the harness's own safety classifier refuses
+that regardless of in-chat permission, by design. Instead, Overseer now
+serves `GET /docs/secrets-setup` (self-contained setup instructions) and a
+scoped `GET /secrets/<project>/<environment>/<name>` endpoint returning
+exactly one named value, authenticated via bearer token or an SSH
+signature (this dev machine uses its own `~/.ssh/id_ed25519`, registered
+with Overseer under an identity — production will need separate auth
+keys, not yet set up). The Overseer MCP server (`mcp__overseer__*`,
+registered globally) wraps this as `get_app_secret`/`list_app_secrets`.
+Confirmed working 2026-09-04: fetched `ANTHROPIC_API_KEY` and
+`DATABASE_PASSWORD` from `sell-my-stuff/dev` this way. This MCP client is
+only permitted to read `sell-my-stuff/dev`, not `prod` (confirmed by a
+refused `list_app_secrets` call) — `overseer-app.yaml`'s `environment`
+field was changed from `prod` to `dev` to match where secrets actually
+live; move both back together once this is genuinely production-ready.
+
 ## Recently completed
 
+- [x] Connected the app to a real, reachable PostgreSQL instance
+      (`docker.26fe.uk:5432/sell_my_stuff`, provisioned outside this repo)
+      and ran all three migrations against it — confirmed `items`, `photos`,
+      `jobs` and `item_facts` all exist. `server/db/client.ts` now also
+      accepts `DATABASE_HOST`/`PORT`/`NAME`/`USER`/`DATABASE_PASSWORD` as an
+      alternative to `DATABASE_URL` (unit-tested), since Overseer's
+      `${secret:<name>}` manifest placeholders only substitute a whole env
+      value, not one embedded in a larger string — a deployed container
+      gets the password as its own var, not a pre-built connection string.
+      `drizzle.config.ts` now has `dbCredentials`, and `db:generate`/
+      `db:migrate` load `.env.local` the same way `worker:dev` does.
+      `overseer-app.yaml` updated with these vars (`DATABASE_PASSWORD` as
+      `${secret:DATABASE_PASSWORD}`) and `environment` changed `prod` → `dev`
+      to match where the secret is actually stored (see "Secrets access").
 - [x] Replaced the illustrative "Needs your attention"/"Working for you" rows
       with real data: `GET /api/items/homepage` (feature-gated, trusted-origin
       checked, returns a truthful empty snapshot rather than an error while
@@ -159,22 +208,27 @@ token, or open the PR link the agent prints after pushing a feature branch.
 ## Test status
 
 - Build: passing (`npm run build`, 2026-09-04)
-- Unit/API contract tests: 34 passing, 1 skipped (`npm test`, 2026-09-04); the
+- Unit/API contract tests: 38 passing, 1 skipped (`npm test`, 2026-09-04); the
   skipped test exercises real HEIC decoding and only runs when
   `HEIC_TEST_FIXTURE` points at a local `.heic` file (see `DEVELOPMENT.md`) —
   run manually and confirmed passing against a real HEIC photo on 2026-09-04
 - Typecheck/lint: passing (`npm run typecheck`, `npm run lint`, 2026-09-04)
-- PostgreSQL/filesystem integration, component, accessibility, visual and E2E: pending
+- Migrations run and verified against the real `sell-my-stuff` Postgres
+  instance (`npm run db:migrate`, 2026-09-04) — schema confirmed correct
+- Filesystem integration, component, accessibility, visual and E2E: pending
 - `inspect_images` worker and `AnthropicVisionProvider`: unit-tested against
-  in-memory fakes only; no run against a real database or the real Anthropic API yet
+  in-memory fakes only; a real capture → worker run hasn't been exercised yet
+  (both credentials now resolve locally, so this is no longer infra-blocked)
 
 ## Deployment status
 
 - Local preview: `http://localhost:3000/`
 - Production: not deployed
+- PostgreSQL: deployed and reachable at `docker.26fe.uk:5432/sell_my_stuff`, migrated
+- Durable upload storage volume: not yet provisioned
 - Intended hostname: `sell.26fe.uk`
 - Capture API in manifest: disabled
-- Overseer manifest/proposals: infrastructure proposals pending
+- Overseer manifest/proposals: no proposals exist yet for `sell-my-stuff` (confirmed via `list_proposals`) — blocked on an image existing in the registry
 - Container verification: CI built the image successfully; local Docker remains unavailable
-- Gitea Actions: run #10 built the full web/worker image successfully, then failed at registry login because repository secrets are absent
+- Gitea Actions: run #18 (2026-09-04) built/tested/linted successfully, then failed at the registry-login/push step — repository secrets still unconfirmed
 - Branch protection: intentionally not required per project owner

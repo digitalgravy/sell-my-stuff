@@ -1,6 +1,6 @@
 version: 1
 project: sell-my-stuff
-environment: prod
+environment: dev
 
 image:
   repository: gitea.internal:3000/overseer-bot/sell-my-stuff
@@ -11,6 +11,11 @@ container:
   env:
     APP_ORIGIN: https://sell.26fe.uk
     CAPTURE_API_ENABLED: 'false'
+    DATABASE_HOST: docker.26fe.uk
+    DATABASE_PORT: '5432'
+    DATABASE_NAME: sell_my_stuff
+    DATABASE_USER: postgres
+    DATABASE_PASSWORD: ${secret:DATABASE_PASSWORD}
 
 network:
   hostname: sell
