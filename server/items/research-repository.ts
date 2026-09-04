@@ -27,6 +27,24 @@ export interface IdentificationFactInput {
   source?: string;
 }
 
+export type IdentificationRunOutcome = 'succeeded' | 'failed';
+
+export interface IdentificationRunLogInput {
+  itemId: string;
+  jobId: string;
+  attempt: number;
+  provider: string;
+  model: string;
+  outcome: IdentificationRunOutcome;
+  inputTokens?: number;
+  outputTokens?: number;
+  /** The full raw identification result (every candidate, not just the leading one) — present only on success. */
+  response?: unknown;
+  errorMessage?: string;
+  startedAt: Date;
+  completedAt: Date;
+}
+
 export type ItemStatusValue =
   | 'INBOX'
   | 'IDENTIFYING'
@@ -55,6 +73,7 @@ export interface ResearchJobRepository {
     itemId: string,
     facts: IdentificationFactInput[],
   ): Promise<void>;
+  logIdentificationRun(entry: IdentificationRunLogInput): Promise<void>;
   markPhotosInspected(photoIds: string[]): Promise<void>;
   transitionItemStatus(itemId: string, status: ItemStatusValue): Promise<void>;
   completeJob(jobId: string, progress: number): Promise<void>;

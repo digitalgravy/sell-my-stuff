@@ -2,6 +2,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   real,
@@ -50,6 +51,11 @@ export const factOrigin = pgEnum('fact_origin', [
   'web_research',
   'manufacturer_data',
   'user_confirmed',
+]);
+
+export const identificationRunOutcome = pgEnum('identification_run_outcome', [
+  'succeeded',
+  'failed',
 ]);
 
 export const items = pgTable(
@@ -149,5 +155,42 @@ export const itemFacts = pgTable(
   (table) => [
     index('item_facts_item_idx').on(table.itemId),
     uniqueIndex('item_facts_item_field_unique').on(table.itemId, table.field),
+  ],
+);
+
+/**
+ * One row per inspect_images attempt (a "build log" for identification
+ * runs) -- unlike item_facts, which keeps only the current derived value
+ * per field, this records the full raw model response (every candidate,
+ * not just the leading one) and per-run cost, whether it succeeded or
+ * failed. See ADR 0007: "record model, approximate cost and evidence
+ * lineage".
+ */
+export const identificationRuns = pgTable(
+  'identification_runs',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    jobId: uuid('job_id')
+      .notNull()
+      .references(() => jobs.id, { onDelete: 'cascade' }),
+    attempt: integer('attempt').notNull(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    outcome: identificationRunOutcome('outcome').notNull(),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    response: jsonb('response'),
+    errorMessage: text('error_message'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('identification_runs_item_idx').on(table.itemId, table.createdAt),
   ],
 );

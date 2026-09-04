@@ -20,6 +20,7 @@ import {
 import type {
   ClaimedJob,
   IdentificationFactInput,
+  IdentificationRunLogInput,
   ItemPhotoForResearch,
   ItemStatusValue,
   ResearchJobRepository,
@@ -39,6 +40,7 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
     outcome: 'RETRY' | 'FAILED';
     retryAt?: Date;
   }[] = [];
+  runLogs: IdentificationRunLogInput[] = [];
 
   async claimNextJob(type: string, maxAttempts: number, _leaseMs: number) {
     const index = this.queue.findIndex(
@@ -59,6 +61,10 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
     facts: IdentificationFactInput[],
   ) {
     this.savedFacts.push(...facts);
+  }
+
+  async logIdentificationRun(entry: IdentificationRunLogInput) {
+    this.runLogs.push(entry);
   }
 
   async markPhotosInspected(photoIds: string[]) {
@@ -103,6 +109,8 @@ class MemoryObjectStore implements ObjectStore {
 }
 
 class StubVisionProvider implements VisionIdentificationProvider {
+  readonly provider = 'stub-provider';
+  readonly model = 'stub-model';
   received?: PhotoForIdentification[];
   result: IdentificationResult | Error;
 
@@ -113,7 +121,10 @@ class StubVisionProvider implements VisionIdentificationProvider {
   async identify(photos: PhotoForIdentification[]) {
     this.received = photos;
     if (this.result instanceof Error) throw this.result;
-    return this.result;
+    return {
+      result: this.result,
+      usage: { inputTokens: 1234, outputTokens: 567 },
+    };
   }
 }
 
@@ -182,6 +193,19 @@ void test('claims a queued job, saves facts and marks the item researching', asy
   );
   assert.equal(manufacturerFact?.value, JSON.stringify('Apple'));
   assert.equal(manufacturerFact?.origin, 'image_inference');
+
+  assert.equal(jobs.runLogs.length, 1);
+  const run = jobs.runLogs[0];
+  assert.equal(run?.outcome, 'succeeded');
+  assert.equal(run?.provider, 'stub-provider');
+  assert.equal(run?.model, 'stub-model');
+  assert.equal(run?.inputTokens, 1234);
+  assert.equal(run?.outputTokens, 567);
+  assert.deepEqual(
+    (run?.response as { candidates: unknown[] } | undefined)?.candidates
+      .length,
+    1,
+  );
 });
 
 void test('converts each photo through the photo converter before identification', async () => {
@@ -304,6 +328,19 @@ void test('retries a failed job while attempts remain, then gives up', async () 
   });
   assert.equal(jobs.failed[1]?.outcome, 'FAILED');
   assert.deepEqual(jobs.statusHistory, ['IDENTIFYING', 'IDENTIFYING', 'FAILED']);
+
+  assert.equal(jobs.runLogs.length, 2);
+  assert.ok(
+    jobs.runLogs.every(
+      (run) =>
+        run.outcome === 'failed' &&
+        run.errorMessage === 'vision provider timed out' &&
+        run.provider === 'stub-provider' &&
+        run.model === 'stub-model' &&
+        run.inputTokens === undefined &&
+        run.response === undefined,
+    ),
+  );
 });
 
 void test('uses the default max attempts when none is supplied', () => {

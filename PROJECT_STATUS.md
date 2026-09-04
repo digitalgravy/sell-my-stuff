@@ -71,45 +71,65 @@ token, or open the PR link the agent prints after pushing a feature branch.
 
 ## Blocked
 
-- [ ] Real end-to-end verification of the `inspect_images` worker
-  - No longer blocked locally: `ANTHROPIC_API_KEY` and `DATABASE_URL` are
-    both usable from this dev machine (via `.env.local`, fetched through
-    Overseer's `get_app_secret`/SSH-signature auth — see "Secrets access"
-    below). Only blocker now is doing an actual real-photo capture → worker
-    run, which hasn't been exercised yet.
+Nothing currently blocked — the last blocked item (real end-to-end
+`inspect_images` verification) was resolved 2026-09-04: a real iPhone photo
+of an Apple HomePod mini was correctly identified end to end (manufacturer,
+model, model number `A2374`, colour, all at 98% confidence, reading the
+actual printed label) via `ANTHROPIC_API_KEY`/`DATABASE_URL` resolved
+locally through Overseer's `get_app_secret` (see "Secrets access" below).
 
 ## Next up
 
-- [ ] Finish the real-photo capture → worker → facts-written test locally
-      (`CAPTURE_API_ENABLED=true`, `SELL_STORAGE_PATH` set, `npm run worker:dev`).
-      Run 2026-09-04 confirmed the pipeline works end-to-end up through the
-      real Anthropic call — upload, storage, job claim, photo read-back,
-      real API call, error recording and retry all verified — but the
-      account's Anthropic credit balance was too low, so a full success
-      (facts actually written, item reaching `RESEARCHING`/`NEEDS_INFORMATION`)
-      hasn't been observed yet. Re-run once credits are added.
 - [ ] Provision a durable upload storage volume (via `container.volumes`,
       which the manifest schema already supports) and redeploy (a redeploy
       of an existing container, so no new DNS/proxy proposals this time).
 - [ ] Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and
       redeploy.
 - [ ] Decide the production identity boundary after checking trusted-device conventions.
-- [ ] Track AI/operational cost per item (starting with the Anthropic vision
-      call's actual token usage from the API response, plus which model was
-      used — see below) and factor it into the eventual sale profitability/
-      balance-sheet calculation, once a valuation/sales data model exists.
-      No cost tracking exists yet — `item_facts`/`jobs` don't record token
-      usage, model or spend anywhere.
-      - Rough cost model as of 2026-09-04 (per-MTok input/output pricing —
+- [ ] Build an item detail page/route. Currently there is none at all —
+      homepage attention/working rows render as inert `<button>`s with no
+      click handler (noticed directly by the project owner while testing:
+      "there's nothing I can do on the homepage"). Per `DESIGN_GUIDE.md`'s
+      progressive-disclosure principle this was always the intent, just not
+      built. Needs: `GET /api/items/[id]` + a repository method for full
+      facts/evidence (not just the homepage summary), a page showing photos
+      and every fact with its confidence/evidence, a real "answer the open
+      question" action for `NEEDS_INFORMATION` items (writes a
+      `user_confirmed`/`user_evidence` fact and re-queues), and at least a
+      retry action for `FAILED` items.
+- [ ] `RESEARCHING` status is currently a label with nothing behind it —
+      no second job type exists, no eBay/market-research code runs after
+      identification succeeds, so an item sits at `RESEARCHING` forever.
+      Per `BRIEF.md`, this is meant to become either an eBay API call or a
+      Browser Operator search — both still architecture-only (see
+      `LLM_HANDOFF.md`'s "External integration state"). Worth deciding
+      whether to build real research now or adjust the copy to stop
+      implying live background work that doesn't exist yet.
+- [ ] Factor per-item AI cost into the eventual sale profitability/balance-
+      sheet calculation, once a valuation/sales data model exists to attach
+      it to. The raw data now exists (see "Recently completed" —
+      `identification_runs` records `input_tokens`/`output_tokens`/`model`
+      per attempt) but nothing aggregates or displays it yet — no
+      cost-per-item rollup, no $-total, no UI surface.
+      - **Real measured cost (2026-09-04, from the project owner's own
+        Anthropic console billing, Sonnet 5, real iPhone photos)**: ~1 cent
+        per photo — a 4-photo single-item identification call cost ~4 cents.
+        Use this over the theoretical estimate below for topping-up/budget
+        planning; it already accounts for whatever the theoretical model
+        under- or overestimated (structured-output/schema overhead, actual
+        output length across multiple candidates each carrying a full
+        evidence string, etc.).
+      - Theoretical cost model as of 2026-09-04, kept for context on *why*
+        the real number lands where it does (per-MTok input/output pricing —
         treat as approximate and check console.anthropic.com/settings/billing
         for current live rates, since sources disagreed by ~50% on the
         Sonnet figure during this conversation): Sonnet 5 (current default
         via `ANTHROPIC_VISION_MODEL`) ≈ $2–3 input / $10 output; Haiku ≈ 4×
         cheaper than Sonnet but lower identification quality; Opus ≈ 2×
-        Sonnet's price but higher quality. At Sonnet pricing, ~1–2.5 cents
-        per item for a 2–6 photo identification call, regardless of the
-        iPhone's capture resolution (Anthropic's vision API downscales any
-        image to a ~1,600-token budget before processing).
+        Sonnet's price but higher quality. At Sonnet pricing, this model
+        alone predicted only ~1–2.5 cents for a full 2–6 photo item (i.e.
+        per-*item*, not per-*photo*) — the real per-photo rate above is
+        higher, so budget off the measured number, not this one.
       - Since model choice is already just an env var, the eventual feature
         could go beyond flat cost tracking: selecting model by item's likely
         value/complexity (e.g. Haiku for a quick first pass, Sonnet/Opus
@@ -137,6 +157,21 @@ live; move both back together once this is genuinely production-ready.
 
 ## Recently completed
 
+- [x] Added a per-attempt identification "build log" (`identification_runs`
+      table, migration 0004): the full raw vision response (every candidate,
+      not just the leading one, plus open questions), which model and
+      provider were used, real input/output token counts from the API
+      response, and — on failure — the error, all keyed to the exact job
+      attempt. Previously only the single leading candidate's derived fields
+      were kept (`item_facts`) and everything else Anthropic returned was
+      discarded; a retried job also had no history beyond the latest error.
+      `VisionIdentificationProvider` now exposes `provider`/`model` and
+      `identify()` returns real token usage (`IdentificationOutcome`), not
+      just the parsed result. No read path/UI for this yet — it's the raw
+      log, not a viewer. Also directly starts answering "what did Anthropic
+      actually return, are we storing it" and the per-item cost-tracking
+      task above (`input_tokens`/`output_tokens` are now real, not
+      estimated).
 - [x] Connected the app to a real, reachable PostgreSQL instance
       (`docker.26fe.uk:5432/sell_my_stuff`, provisioned outside this repo)
       and ran all three migrations against it — confirmed `items`, `photos`,
@@ -239,7 +274,7 @@ live; move both back together once this is genuinely production-ready.
 ## Test status
 
 - Build: passing (`npm run build`, 2026-09-04)
-- Unit/API contract tests: 38 passing, 1 skipped (`npm test`, 2026-09-04); the
+- Unit/API contract tests: 43 passing, 1 skipped (`npm test`, 2026-09-04); the
   skipped test exercises real HEIC decoding and only runs when
   `HEIC_TEST_FIXTURE` points at a local `.heic` file (see `DEVELOPMENT.md`) —
   run manually and confirmed passing against a real HEIC photo on 2026-09-04

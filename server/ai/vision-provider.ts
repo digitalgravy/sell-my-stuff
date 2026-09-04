@@ -38,6 +38,20 @@ export type IdentificationCandidate = z.infer<
 >;
 export type IdentificationResult = z.infer<typeof identificationResultSchema>;
 
+export interface IdentificationUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+export interface IdentificationOutcome {
+  result: IdentificationResult;
+  usage: IdentificationUsage;
+}
+
 export interface VisionIdentificationProvider {
-  identify(photos: PhotoForIdentification[]): Promise<IdentificationResult>;
+  /** e.g. 'anthropic' — recorded against every run, success or failure. */
+  readonly provider: string;
+  /** The exact model identifier this instance calls — recorded against every run, success or failure. */
+  readonly model: string;
+  identify(photos: PhotoForIdentification[]): Promise<IdentificationOutcome>;
 }

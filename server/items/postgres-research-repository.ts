@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { inArray, sql } from 'drizzle-orm';
 
-import { itemFacts, items, jobs, photos } from '@/db/schema';
+import { identificationRuns, itemFacts, items, jobs, photos } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 
 import type {
   ClaimedJob,
   IdentificationFactInput,
+  IdentificationRunLogInput,
   ItemPhotoForResearch,
   ItemStatusValue,
   ResearchJobRepository,
@@ -118,6 +119,25 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
           retrievedAt: sql`now()`,
         },
       });
+  }
+
+  async logIdentificationRun(entry: IdentificationRunLogInput): Promise<void> {
+    const database = getDatabase();
+    await database.insert(identificationRuns).values({
+      id: randomUUID(),
+      itemId: entry.itemId,
+      jobId: entry.jobId,
+      attempt: entry.attempt,
+      provider: entry.provider,
+      model: entry.model,
+      outcome: entry.outcome,
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+      response: entry.response,
+      errorMessage: entry.errorMessage,
+      startedAt: entry.startedAt,
+      completedAt: entry.completedAt,
+    });
   }
 
   async markPhotosInspected(photoIds: string[]): Promise<void> {

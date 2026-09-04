@@ -5,7 +5,7 @@ import {
   identificationResultSchema,
   SUPPORTED_VISION_MEDIA_TYPES,
   UnsupportedPhotoFormatError,
-  type IdentificationResult,
+  type IdentificationOutcome,
   type PhotoForIdentification,
   type SupportedVisionMediaType,
   type VisionIdentificationProvider,
@@ -34,14 +34,19 @@ function isSupportedMediaType(
 }
 
 export class AnthropicVisionProvider implements VisionIdentificationProvider {
+  readonly provider = 'anthropic';
+  readonly model: string;
+
   constructor(
     private readonly client: Anthropic,
-    private readonly model: string = DEFAULT_MODEL,
-  ) {}
+    model: string = DEFAULT_MODEL,
+  ) {
+    this.model = model;
+  }
 
   async identify(
     photos: PhotoForIdentification[],
-  ): Promise<IdentificationResult> {
+  ): Promise<IdentificationOutcome> {
     const usablePhotos = photos.filter((photo) =>
       isSupportedMediaType(photo.mediaType),
     );
@@ -86,7 +91,13 @@ export class AnthropicVisionProvider implements VisionIdentificationProvider {
         'The vision provider response did not match the expected identification schema',
       );
     }
-    return response.parsed_output;
+    return {
+      result: response.parsed_output,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
+    };
   }
 }
 

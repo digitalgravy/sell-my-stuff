@@ -9,6 +9,7 @@ import type {
 } from '@/server/ai/vision-provider';
 import type {
   IdentificationFactInput,
+  IdentificationRunLogInput,
   ResearchJobRepository,
 } from '@/server/items/research-repository';
 import type { ObjectStore } from '@/server/storage/object-store';
@@ -47,6 +48,16 @@ export async function runInspectImagesJob(
   );
   if (!job) return { claimed: false };
 
+  const startedAt = dependencies.now?.() ?? new Date();
+  const runLogBase = {
+    itemId: job.itemId,
+    jobId: job.id,
+    attempt: job.attempt,
+    provider: dependencies.vision.provider,
+    model: dependencies.vision.model,
+    startedAt,
+  } satisfies Partial<IdentificationRunLogInput>;
+
   try {
     await dependencies.jobs.transitionItemStatus(job.itemId, 'IDENTIFYING');
 
@@ -67,23 +78,31 @@ export async function runInspectImagesJob(
       }),
     );
 
-    const result = await dependencies.vision.identify(photosForIdentification);
-    const leading = [...result.candidates].sort(
+    const outcome = await dependencies.vision.identify(photosForIdentification);
+    const leading = [...outcome.result.candidates].sort(
       (a, b) => b.confidence - a.confidence,
     )[0];
     if (!leading) throw new Error('Vision provider returned no candidates');
 
     await dependencies.jobs.saveIdentificationFacts(
       job.itemId,
-      buildIdentificationFacts(leading, result.openQuestions),
+      buildIdentificationFacts(leading, outcome.result.openQuestions),
     );
     await dependencies.jobs.markPhotosInspected(
       photos.map((photo) => photo.id),
     );
+    await dependencies.jobs.logIdentificationRun({
+      ...runLogBase,
+      outcome: 'succeeded',
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+      response: outcome.result,
+      completedAt: dependencies.now?.() ?? new Date(),
+    });
 
     const needsInformation =
       leading.confidence < IDENTIFICATION_CONFIDENCE_THRESHOLD ||
-      result.openQuestions.length > 0;
+      outcome.result.openQuestions.length > 0;
     await dependencies.jobs.transitionItemStatus(
       job.itemId,
       needsInformation ? 'NEEDS_INFORMATION' : 'RESEARCHING',
@@ -100,6 +119,12 @@ export async function runInspectImagesJob(
         ? new Date(now.getTime() + retryDelayMs(job.attempt))
         : undefined;
     await dependencies.jobs.failJob(job.id, message, outcome, retryAt);
+    await dependencies.jobs.logIdentificationRun({
+      ...runLogBase,
+      outcome: 'failed',
+      errorMessage: message,
+      completedAt: now,
+    });
     if (outcome === 'FAILED') {
       await dependencies.jobs.transitionItemStatus(job.itemId, 'FAILED');
     }
