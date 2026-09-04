@@ -11,8 +11,8 @@ Read `BRIEF.md` before changing scope.
 
 ## Current state
 
-- Gitea PRs #1 and #2 are merged. `main` is known-good at `1f21d8c`.
-- Active branch: `codex/vision-worker`; delivery PR #3.
+- Gitea PRs #1–#4 have been delivered. `main` is known-good at `3dfcf9e`.
+- Worker delivery was PR #3; deterministic container installation was PR #4.
 - The branch contains the reviewed UI redesign and worker/vision slice
   described below.
 - `origin` is authoritative Gitea; `github` is the GitHub mirror.
@@ -146,19 +146,18 @@ See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
 
 ## Exact next action
 
-1. Commit, submit and merge the UI plus worker/vision branch after final review.
-2. Prepare the missing PostgreSQL/durable-volume provisioning capability in
+1. Prepare the missing PostgreSQL/durable-volume provisioning capability in
    Overseer; its current deploy manifest only models one application container
    and would incorrectly create an HTTP proxy for a database dependency.
-3. Configure Gitea repository registry secrets so the already-successful image
+2. Configure Gitea repository registry secrets so the already-successful image
    build can push and reach the proposal step.
-4. Once infrastructure exists: apply all Drizzle migrations, configure
+3. Once infrastructure exists: apply all Drizzle migrations, configure
    `DATABASE_URL`, `SELL_STORAGE_PATH` and `ANTHROPIC_API_KEY`, and perform a
    real capture → worker → facts-written test end to end.
-5. Only then set `CAPTURE_API_ENABLED=true` through a reviewed deploy proposal.
-6. Add HEIC/HEIF → JPEG/PNG conversion so real iPhone photos reach
+4. Only then set `CAPTURE_API_ENABLED=true` through a reviewed deploy proposal.
+5. Add HEIC/HEIF → JPEG/PNG conversion so real iPhone photos reach
    `AnthropicVisionProvider` (currently rejected with a clear error).
-7. Build the "3 things need you" UI backed by `identity.open_questions`
+6. Build the "3 things need you" UI backed by `identity.open_questions`
    facts, replacing the current illustrative queue data in `app/page.tsx`.
 
 ## Commands
