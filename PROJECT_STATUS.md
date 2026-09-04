@@ -95,14 +95,25 @@ token, or open the PR link the agent prints after pushing a feature branch.
       redeploy.
 - [ ] Decide the production identity boundary after checking trusted-device conventions.
 - [ ] Track AI/operational cost per item (starting with the Anthropic vision
-      call's actual token usage from the API response) and factor it into
-      the eventual sale profitability/balance-sheet calculation, once a
-      valuation/sales data model exists. Rough cost model as of 2026-09-04
-      (Claude Sonnet 5, $2/$10 per MTok input/output): ~1–2.5 cents per item
-      for a 2–6 photo identification call, regardless of the iPhone's
-      capture resolution (Anthropic's vision API downscales any image to a
-      ~1,600-token budget before processing). No cost tracking exists yet —
-      `item_facts`/`jobs` don't record token usage or spend anywhere.
+      call's actual token usage from the API response, plus which model was
+      used — see below) and factor it into the eventual sale profitability/
+      balance-sheet calculation, once a valuation/sales data model exists.
+      No cost tracking exists yet — `item_facts`/`jobs` don't record token
+      usage, model or spend anywhere.
+      - Rough cost model as of 2026-09-04 (per-MTok input/output pricing —
+        treat as approximate and check console.anthropic.com/settings/billing
+        for current live rates, since sources disagreed by ~50% on the
+        Sonnet figure during this conversation): Sonnet 5 (current default
+        via `ANTHROPIC_VISION_MODEL`) ≈ $2–3 input / $10 output; Haiku ≈ 4×
+        cheaper than Sonnet but lower identification quality; Opus ≈ 2×
+        Sonnet's price but higher quality. At Sonnet pricing, ~1–2.5 cents
+        per item for a 2–6 photo identification call, regardless of the
+        iPhone's capture resolution (Anthropic's vision API downscales any
+        image to a ~1,600-token budget before processing).
+      - Since model choice is already just an env var, the eventual feature
+        could go beyond flat cost tracking: selecting model by item's likely
+        value/complexity (e.g. Haiku for a quick first pass, Sonnet/Opus
+        only when needed) rather than always defaulting to one model.
 - [ ] Add component, accessibility and mobile E2E coverage for capture.
 
 ## Secrets access
