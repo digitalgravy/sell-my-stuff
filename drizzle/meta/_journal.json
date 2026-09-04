@@ -22,6 +22,13 @@
       "when": 1788512347022,
       "tag": "0002_wakeful_moondragon",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788535232846,
+      "tag": "0003_long_jimmy_woo",
+      "breakpoints": true
     }
   ]
 }

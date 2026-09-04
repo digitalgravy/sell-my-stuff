@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildHomepageSnapshot } from '../server/items/homepage-snapshot';
+import {
+  buildHomepageSnapshot,
+  summarizeError,
+} from '../server/items/homepage-snapshot';
 import type { HomepageItemRow } from '../server/items/homepage-repository';
 
 function row(overrides: Partial<HomepageItemRow>): HomepageItemRow {
@@ -70,6 +73,47 @@ void test('routes non-NEEDS_INFORMATION statuses into working with a stage label
 void test('falls back to the raw status as a stage label for an unmapped status', () => {
   const snapshot = buildHomepageSnapshot([row({ status: 'VALUING' })]);
   assert.equal(snapshot.working[0]?.stage, 'VALUING');
+});
+
+void test('routes a FAILED item into attention with a summarized error reason', () => {
+  const snapshot = buildHomepageSnapshot([
+    row({
+      status: 'FAILED',
+      facts: { itemType: 'graphics card', openQuestions: [] },
+      lastError:
+        '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}',
+    }),
+  ]);
+
+  assert.equal(snapshot.working.length, 0);
+  assert.equal(
+    snapshot.attention[0]?.reason,
+    'Identification failed: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.',
+  );
+});
+
+void test('summarizeError extracts a provider API error message from JSON', () => {
+  const reason = summarizeError(
+    '400 {"type":"error","error":{"type":"invalid_request_error","message":"bad request"}}',
+  );
+  assert.equal(reason, 'Identification failed: bad request');
+});
+
+void test('summarizeError falls back to the raw text when it is not JSON', () => {
+  assert.equal(
+    summarizeError('socket hang up'),
+    'Identification failed: socket hang up',
+  );
+});
+
+void test('summarizeError falls back to a generic label when there is no error text', () => {
+  assert.equal(summarizeError(undefined), 'Identification failed');
+});
+
+void test('summarizeError truncates a very long message', () => {
+  const reason = summarizeError('x'.repeat(500));
+  assert.ok(reason.length <= 160);
+  assert.ok(reason.endsWith('…'));
 });
 
 void test('derives a display title from manufacturer, model and item type', () => {

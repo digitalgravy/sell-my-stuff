@@ -12,6 +12,8 @@ export interface HomepageItemRow {
   status: ItemStatusValue;
   updatedAt: Date;
   facts: HomepageItemFacts;
+  /** The most recent inspect_images job's error, present only when status is FAILED. */
+  lastError?: string;
 }
 
 export interface HomepageRepository {

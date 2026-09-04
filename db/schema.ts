@@ -25,6 +25,7 @@ export const itemStatus = pgEnum('item_status', [
   'AWAITING_DISPATCH',
   'DISPATCHED',
   'COMPLETE',
+  'FAILED',
 ]);
 
 export const photoStatus = pgEnum('photo_status', [

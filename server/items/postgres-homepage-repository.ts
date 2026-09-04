@@ -1,7 +1,8 @@
-import { and, desc, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
-import { itemFacts, items } from '@/db/schema';
+import { itemFacts, items, jobs } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
+import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 
 import type {
   HomepageItemFacts,
@@ -19,6 +20,7 @@ const ACTIVE_STATUSES: ItemStatusValue[] = [
   'IDENTIFYING',
   'NEEDS_INFORMATION',
   'RESEARCHING',
+  'FAILED',
 ];
 
 const DISPLAY_FACT_FIELDS = [
@@ -76,12 +78,48 @@ export class PostgresHomepageRepository implements HomepageRepository {
       factsByItem.set(row.itemId, entry);
     }
 
+    const failedItemIds = itemRows
+      .filter((row) => row.status === 'FAILED')
+      .map((row) => row.id);
+    const lastErrorByItem = await this.#loadLastErrors(database, failedItemIds);
+
     return itemRows.map((row) => ({
       id: row.id,
       status: row.status,
       updatedAt: row.updatedAt,
       facts: factsByItem.get(row.id) ?? { openQuestions: [] },
+      lastError: lastErrorByItem.get(row.id),
     }));
+  }
+
+  /** Most recent inspect_images job's error per item, for FAILED items only. */
+  async #loadLastErrors(
+    database: ReturnType<typeof getDatabase>,
+    itemIds: string[],
+  ): Promise<Map<string, string>> {
+    if (itemIds.length === 0) return new Map();
+
+    const rows = await database
+      .select({
+        itemId: jobs.itemId,
+        lastError: jobs.lastError,
+      })
+      .from(jobs)
+      .where(
+        and(
+          inArray(jobs.itemId, itemIds),
+          eq(jobs.type, INSPECT_IMAGES_JOB_TYPE),
+        ),
+      )
+      .orderBy(desc(jobs.updatedAt));
+
+    const lastErrorByItem = new Map<string, string>();
+    for (const row of rows) {
+      if (!lastErrorByItem.has(row.itemId) && row.lastError) {
+        lastErrorByItem.set(row.itemId, row.lastError);
+      }
+    }
+    return lastErrorByItem;
   }
 }
 

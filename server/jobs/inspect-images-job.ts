@@ -100,6 +100,9 @@ export async function runInspectImagesJob(
         ? new Date(now.getTime() + retryDelayMs(job.attempt))
         : undefined;
     await dependencies.jobs.failJob(job.id, message, outcome, retryAt);
+    if (outcome === 'FAILED') {
+      await dependencies.jobs.transitionItemStatus(job.itemId, 'FAILED');
+    }
     return { claimed: true, itemId: job.itemId, outcome: 'failed' };
   }
 }

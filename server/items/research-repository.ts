@@ -40,7 +40,8 @@ export type ItemStatusValue =
   | 'SOLD'
   | 'AWAITING_DISPATCH'
   | 'DISPATCHED'
-  | 'COMPLETE';
+  | 'COMPLETE'
+  | 'FAILED';
 
 export interface ResearchJobRepository {
   /** Atomically claims the oldest eligible job of `type`, or returns null if none is available. */

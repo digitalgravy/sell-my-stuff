@@ -285,6 +285,7 @@ void test('retries a failed job while attempts remain, then gives up', async () 
       retryAt: new Date('2026-09-04T00:00:05Z'),
     },
   ]);
+  assert.deepEqual(jobs.statusHistory, ['IDENTIFYING']);
 
   // Simulate the retry: the job is back in QUEUED state (attempt now 1).
   jobs.queue = [
@@ -302,6 +303,7 @@ void test('retries a failed job while attempts remain, then gives up', async () 
     outcome: 'failed',
   });
   assert.equal(jobs.failed[1]?.outcome, 'FAILED');
+  assert.deepEqual(jobs.statusHistory, ['IDENTIFYING', 'IDENTIFYING', 'FAILED']);
 });
 
 void test('uses the default max attempts when none is supplied', () => {
