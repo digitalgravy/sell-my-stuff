@@ -22,11 +22,18 @@ export interface HomepageSnapshot {
 // Only statuses a worker can currently produce (see inspect-images-job.ts)
 // get a real stage label; anything else falls back to its raw status so a
 // future stage is visible, not silently dropped, until this map is extended.
+//
+// RESEARCHING is deliberately NOT "Researching recent sales" here: no code
+// processes that status yet (no second job type exists — see
+// PROJECT_STATUS.md), so that copy would claim ongoing work that isn't
+// happening. The label must say what's actually true — identified, and
+// stalled only because the next stage isn't built — not what the status
+// name suggests. Update this the moment a real research job exists.
 const WORKING_STAGE_LABEL: Partial<Record<HomepageItemRow['status'], string>> =
   {
     INBOX: 'Queued for identification',
     IDENTIFYING: 'Identifying',
-    RESEARCHING: 'Researching recent sales',
+    RESEARCHING: 'Identified — research not yet available',
   };
 
 const NO_OPEN_QUESTION_REASON = 'Confidence too low to proceed automatically';

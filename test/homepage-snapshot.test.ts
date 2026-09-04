@@ -65,7 +65,7 @@ void test('routes non-NEEDS_INFORMATION statuses into working with a stage label
     [
       'Queued for identification',
       'Identifying',
-      'Researching recent sales',
+      'Identified — research not yet available',
     ],
   );
 });

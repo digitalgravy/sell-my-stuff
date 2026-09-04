@@ -80,6 +80,23 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
 
 ## Next up
 
+- [ ] Condition/damage/wear assessment — not built, design agreed with the
+      project owner 2026-09-04: extends the existing automated-first,
+      confidence-gated pattern (same as identity facts) rather than a new
+      mechanism. The model attempts functional status, cosmetic wear and
+      material-specific damage (e.g. scuffs on a plastic shell vs. tears in
+      a fabric mesh grille) per field with its own confidence/evidence, and
+      only low-confidence fields become a `NEEDS_INFORMATION` question —
+      exactly like identity candidates already work. `BRIEF.md`'s "Condition
+      model" (new/sealed through spares/repair, functional status, cosmetic
+      wear, battery condition, screen/enclosure condition, defects) and
+      "Functional testing" (category-specific checks — keyboard: power/
+      keys/charging; phone: boot/display/touch/battery health) sections are
+      the spec. Open design question not yet settled: same vision call as
+      identification (simpler, cheaper) vs. a separate stage (matches the
+      brief's framing as a distinct concern, independently re-runnable after
+      follow-up photos). Deliberately not started yet — parked in favour of
+      the broader pipeline/status-accuracy work below.
 - [ ] Provision a durable upload storage volume (via `container.volumes`,
       which the manifest schema already supports) and redeploy (a redeploy
       of an existing container, so no new DNS/proxy proposals this time).
@@ -96,15 +113,28 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
       and every fact with its confidence/evidence, a real "answer the open
       question" action for `NEEDS_INFORMATION` items (writes a
       `user_confirmed`/`user_evidence` fact and re-queues), and at least a
-      retry action for `FAILED` items.
-- [ ] `RESEARCHING` status is currently a label with nothing behind it —
-      no second job type exists, no eBay/market-research code runs after
-      identification succeeds, so an item sits at `RESEARCHING` forever.
-      Per `BRIEF.md`, this is meant to become either an eBay API call or a
-      Browser Operator search — both still architecture-only (see
-      `LLM_HANDOFF.md`'s "External integration state"). Worth deciding
-      whether to build real research now or adjust the copy to stop
-      implying live background work that doesn't exist yet.
+      retry action for `FAILED` items. Per the project owner (2026-09-04),
+      this should also surface the `identification_runs` build log (already
+      recorded, see above — just needs a read path/viewer) per item, and let
+      the user manually retry/replay any step. Explicit design principle:
+      "this is a tool that works for me, not the other way round" — auto-
+      retry (e.g. on a rate limit) is a nice-to-have convenience, but manual
+      override of anything must always be available, never gated behind
+      auto-retry logic succeeding or failing first.
+- [x] Item status must reflect what's *actually running*, not just the
+      correct next lifecycle stage. Fixed 2026-09-04 for the one real
+      instance: `RESEARCHING`'s stage label was "Researching recent sales,"
+      which is a lie — no code processes that status at all (no second job
+      type exists). Changed to "Identified — research not yet available"
+      (`homepage-snapshot.ts`'s `WORKING_STAGE_LABEL`). `RESEARCHING` the
+      *status* stays correct (it genuinely is the right next stage); only
+      the copy describing current activity changed. General principle
+      stated by the project owner, worth applying to any future status the
+      same way: if a status's label implies work is happening and no code
+      actually does that work, the label is wrong and must say so.
+      Real research (eBay API call or Browser Operator search, per
+      `BRIEF.md`) is still fully unbuilt — see `LLM_HANDOFF.md`'s "External
+      integration state."
 - [ ] Factor per-item AI cost into the eventual sale profitability/balance-
       sheet calculation, once a valuation/sales data model exists to attach
       it to. The raw data now exists (see "Recently completed" —
