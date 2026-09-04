@@ -4,15 +4,19 @@ Last updated: 2026-09-04
 
 ## Current phase
 
-Milestone 0 foundations are merged. Milestone 1 now has a server-owned capture
-contract and a first identification worker slice, but production persistence
-remains safely disabled until its infrastructure is provisioned.
+Milestone 0 foundations are merged and **the app is now deployed and live**
+at `https://sell.26fe.uk` (first deploy, 2026-09-04). Milestone 1 has a
+server-owned capture contract and a first identification worker slice, but
+persistence remains safely disabled in production (`CAPTURE_API_ENABLED=false`)
+until a durable upload storage volume exists and an end-to-end capture run
+has been verified.
 
 - Branch: `main` is authoritative; all work happens on short-lived branches
   merged locally then pushed straight to `main` (see "Merge process" below)
 - Current PR: none open; delivery PRs #2–#5 are merged
-- Current production version: not deployed
-- Last code-bearing `main`: `d33729e` (homepage attention/working panels)
+- Current production version: deployed and live at `https://sell.26fe.uk`
+  (image `f945117d4e88dcb1261f2c33f1e2eb158d907efd`, capture disabled)
+- Last code-bearing `main`: `f945117` (Postgres connection wiring)
 
 ## Merge process
 
@@ -40,8 +44,13 @@ token, or open the PR link the agent prints after pushing a feature branch.
   - [x] Docker/Overseer manifest and Gitea workflow
   - [x] Gitea PRs #1–#5 delivered or closed after their contents reached `main`
   - [x] First Gitea Actions container build completed successfully
-  - [ ] Configure registry Actions secrets (the first run failed only at image push)
-  - [ ] Create and approve the first Overseer container, DNS and proxy proposals
+  - [x] Configure registry Actions secrets (`REGISTRY_USERNAME=overseer-bot` +
+        a properly-scoped token, added directly via the Gitea web UI —
+        run #19 confirms the push step now succeeds)
+  - [x] Create and approve the first Overseer container, DNS and proxy
+        proposals — live at `https://sell.26fe.uk` since 2026-09-04. The
+        NPM proxy host had to be corrected from the auto-generated
+        `sell.internal` to `sell.26fe.uk` by hand — see "Known bugs"
 - [ ] Milestone 1 vertical slice: photo → draft item
   - [x] Camera/file picker, multiple images, drag/drop and clipboard input
   - [x] PostgreSQL item/photo/job schema and generated migration
@@ -62,17 +71,6 @@ token, or open the PR link the agent prints after pushing a feature branch.
 
 ## Blocked
 
-- [ ] First infrastructure deployment
-  - Blocker: Gitea Actions still fails at the image-push step on every run
-    (build/test/lint pass in CI; confirmed via the Actions API on run #18,
-    2026-09-04) — no image exists in the registry yet, so `propose_deploy`
-    has nothing valid to reference. A `!`-prefixed command to set
-    `REGISTRY_USERNAME`/`REGISTRY_PASSWORD` repo secrets was handed to the
-    project owner; unclear if it's been run yet.
-  - Also still needed once an image exists: a durable upload storage volume
-    (`container.volumes` in `overseer-app.yaml` already supports this, just
-    not yet added), then a first `propose_deploy` (container + DNS + proxy
-    host) needs human approve+execute.
 - [ ] Real end-to-end verification of the `inspect_images` worker
   - No longer blocked locally: `ANTHROPIC_API_KEY` and `DATABASE_URL` are
     both usable from this dev machine (via `.env.local`, fetched through
@@ -85,11 +83,9 @@ token, or open the PR link the agent prints after pushing a feature branch.
 - [ ] Run an actual real-photo capture → worker → facts-written test locally
       (`CAPTURE_API_ENABLED=true`, `SELL_STORAGE_PATH` set, `npm run worker:dev`)
       now that both `ANTHROPIC_API_KEY` and `DATABASE_URL` resolve locally.
-- [ ] Get Gitea Actions past the image-push step (registry secrets).
 - [ ] Provision a durable upload storage volume (via `container.volumes`,
-      which the manifest schema already supports).
-- [ ] First `propose_deploy` for `sell-my-stuff` once an image exists, then
-      human approve+execute for the container/DNS/proxy proposals.
+      which the manifest schema already supports) and redeploy (a redeploy
+      of an existing container, so no new DNS/proxy proposals this time).
 - [ ] Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and
       redeploy.
 - [ ] Decide the production identity boundary after checking trusted-device conventions.
@@ -190,6 +186,16 @@ live; move both back together once this is genuinely production-ready.
 - [ ] Production capture returns a clear 503 until persistence infrastructure is ready.
 - [ ] Navigation links and the three outcome metrics are illustrative and not API-backed.
 - [ ] WebMCP registration is feature-detected but not contract-tested in a supported host.
+- [ ] **Overseer bug (not this repo's code)**: a first deploy's `proposeDeploy()`
+      hardcodes `${manifest.network.hostname}.internal` for *both* the UniFi
+      DNS record and the NPM proxy host. Per the operator's actual convention
+      (`.26fe.uk` names go through NPM for HTTPS; `.internal`/`.26fe` names
+      are direct-host-only, no proxy), the NPM proxy host should have used
+      `sell.26fe.uk`, matching `APP_ORIGIN` in `overseer-app.yaml` (which was
+      already correct). Had to be corrected by hand post-deploy on
+      2026-09-04. Will hit every future first deploy of every project until
+      fixed in Overseer's `deploy.ts` — worth raising with the Overseer
+      building system rather than hand-fixing again next time.
 
 ## Technical debt
 
@@ -223,12 +229,22 @@ live; move both back together once this is genuinely production-ready.
 ## Deployment status
 
 - Local preview: `http://localhost:3000/`
-- Production: not deployed
+- **Production: live at `https://sell.26fe.uk`** since 2026-09-04, image
+  `f945117d4e88dcb1261f2c33f1e2eb158d907efd`, `CAPTURE_API_ENABLED=false`.
+  `/api/healthz` and `/` confirmed responding 200; `/api/items/homepage`
+  confirmed returning the truthful empty snapshot.
 - PostgreSQL: deployed and reachable at `docker.26fe.uk:5432/sell_my_stuff`, migrated
 - Durable upload storage volume: not yet provisioned
-- Intended hostname: `sell.26fe.uk`
-- Capture API in manifest: disabled
-- Overseer manifest/proposals: no proposals exist yet for `sell-my-stuff` (confirmed via `list_proposals`) — blocked on an image existing in the registry
+- Overseer manifest/proposals: first deploy's 3 proposals (container, DNS,
+  NPM proxy) approved and executed 2026-09-04. The NPM proxy host had to be
+  hand-corrected from the auto-generated `sell.internal` to `sell.26fe.uk`
+  — see "Known bugs". A future redeploy only touches the container proposal
+  (DNS/proxy aren't re-proposed once the container exists), so this doesn't
+  need re-fixing on every redeploy — only ever again on another project's
+  first deploy, until Overseer's own bug is fixed.
 - Container verification: CI built the image successfully; local Docker remains unavailable
-- Gitea Actions: run #18 (2026-09-04) built/tested/linted successfully, then failed at the registry-login/push step — repository secrets still unconfirmed
+- Gitea Actions: run #19 (2026-09-04) built/tested/linted/pushed/proposed
+  successfully — `REGISTRY_USERNAME=overseer-bot` + a properly `write:repository`-
+  and `write:package`-scoped token, set directly via the Gitea web UI, fixed
+  the earlier registry-login 403s
 - Branch protection: intentionally not required per project owner

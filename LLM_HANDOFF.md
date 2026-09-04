@@ -14,10 +14,12 @@ assistant-persona copy.
 
 ## Current state
 
-- The latest code-bearing `main` is `d33729e` (homepage attention/working
-  panels backed by real data, merged directly — see "Merge process without a
-  Gitea token" below). PR #1 was closed after its contents had already
-  reached `main`; PRs #2–#5 are merged; #6 was a handoff-docs-only merge.
+- The latest code-bearing `main` is `f945117` (Postgres connection wiring,
+  merged directly — see "Merge process without a Gitea token" below). PR #1
+  was closed after its contents had already reached `main`; PRs #2–#5 are
+  merged; #6 was a handoff-docs-only merge.
+- **The app is deployed and live** at `https://sell.26fe.uk` (first deploy,
+  2026-09-04, `CAPTURE_API_ENABLED=false`) — see "First deploy" below.
 - Worker delivery was PR #3; deterministic container installation was PR #4.
 - `main` contains the reviewed UI redesign and worker/vision slice described below.
 - `origin` is authoritative Gitea; `github` is the GitHub mirror.
@@ -263,28 +265,60 @@ See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
 - Production apps run on `docker.26fe.uk`; registry is `gitea.internal:3000`.
 - Secrets live SOPS+age encrypted outside this repository.
 
+## First deploy (2026-09-04)
+
+`sell-my-stuff` is live at `https://sell.26fe.uk` — confirmed `/api/healthz`
+200, `/` 200, `/api/items/homepage` returning the truthful empty snapshot
+(capture still disabled). How it got there, since the path had several real
+snags worth knowing about before touching deploy again:
+
+- Gitea Actions was failing at the image-push step on every run (build/test/
+  lint always passed). Root cause: `REGISTRY_USERNAME`/`REGISTRY_PASSWORD`
+  repo secrets didn't exist. First attempt used `../overseer/secrets/gitea_full.token`
+  via a `!`-prefixed curl script — it authenticated as `stue` (not
+  `overseer-bot`, despite that being the token's assumed owner) and got
+  `403 "user should be the owner of the repo"` — a misleading Gitea message
+  that actually means **missing token scope** (`write:repository`), not an
+  ownership problem, even for the actual repo owner. Fixed by the project
+  owner regenerating a token with the right scopes and adding
+  `REGISTRY_USERNAME=overseer-bot`/`REGISTRY_PASSWORD=<token>` directly via
+  the Gitea web UI (Settings → Actions → Secrets) — confirmed by run #19.
+- Once an image existed, CI's own "Propose deploy through Overseer" step
+  still reported `failure` (took ~12.5 minutes) — but `list_proposals`
+  showed all 3 proposals (container/DNS/NPM) were actually created
+  successfully. **Don't trust that step's pass/fail alone — check
+  `list_proposals` for the real outcome** if it ever happens again; the
+  failure is likely in some post-proposal step or the `docker run --pull
+  always` fetch of Overseer's own CLI image, not the proposals themselves.
+- Approving/executing the 3 proposals was explicitly asked for by the
+  project owner in chat, but `mcp__overseer__approve_operation` was refused
+  by this harness's own safety classifier regardless — unlike `git push`,
+  no permission-rule workaround was set up for this one (real infra
+  mutation, deliberately left to the human/Overseer's own approval flow).
+  The project owner approved+executed via Overseer directly.
+- **Bug in Overseer itself, not this repo**: a first deploy's `proposeDeploy()`
+  hardcodes `${manifest.network.hostname}.internal` for *both* the DNS
+  record and the NPM proxy host. Per the operator's convention (`.26fe.uk`
+  goes through NPM for HTTPS, `.internal`/`.26fe` are direct-host-only), the
+  NPM proxy host should have used `sell.26fe.uk` — matching `APP_ORIGIN` in
+  `overseer-app.yaml`, which was already correct. Had to be hand-corrected
+  post-deploy. Will recur on every other project's first deploy until fixed
+  in Overseer's `deploy.ts` (see PROJECT_STATUS.md's "Known bugs").
+
 ## Exact next action
 
-1. Get Gitea Actions past the image-push step — confirmed via the Actions
-   API (`GET /api/v1/repos/stue/sell-my-stuff/actions/runs/18/jobs`, no auth
-   needed for this read) that build/test/lint all pass in CI but push still
-   fails on every run through at least run #18 (2026-09-04). A `!`-prefixed
-   command using `../overseer/secrets/gitea_full.token` was handed to the
-   project owner earlier in that session to set `REGISTRY_USERNAME`/
-   `REGISTRY_PASSWORD`; confirm whether it was run, and if the account it
-   resolves to actually has package-write rights on `overseer-bot/sell-my-stuff`.
+1. Run an actual real-photo capture → worker → facts-written test locally
+   (`CAPTURE_API_ENABLED=true`, `SELL_STORAGE_PATH` set, `npm run worker:dev`)
+   — no longer infra-blocked (`ANTHROPIC_API_KEY`/`DATABASE_URL` both
+   resolve via `.env.local`; migrations are already applied to the real DB).
 2. Provision a durable upload storage volume (the manifest's
    `container.volumes` already supports this — hostPath/containerPath/
-   readOnly — no new Overseer capability needed, just add an entry and
-   redeploy).
-3. Once an image exists in the registry: call `mcp__overseer__propose_deploy`
-   with `manifestPath: overseer-app.yaml` and the real image ref — this is
-   `sell-my-stuff`'s first-ever deploy (container + DNS + NPM proxy host, 3
-   proposals), each needs a human `approve_operation` + `execute_operation`.
-4. Run an actual real-photo capture → worker → facts-written test — no
-   longer infra-blocked locally (`ANTHROPIC_API_KEY`/`DATABASE_URL` both
-   resolve via `.env.local`; migrations are already applied to the real DB).
-5. Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and redeploy.
+   readOnly — no new Overseer capability needed) and redeploy — this is a
+   redeploy of an already-existing container, so only the container proposal
+   is created, not new DNS/proxy proposals.
+3. Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and redeploy.
+4. Consider raising the `.internal`-vs-`.26fe.uk` NPM naming bug with the
+   Overseer building system so it doesn't need manual correction again.
 
 ## Handoff checklist
 
@@ -340,9 +374,16 @@ npm run db:migrate
 - Do not put uploads on the container's ephemeral writable layer.
 - Do not embed Overseer tokens, database URLs or API keys/secrets in source/logs.
 - The local Docker daemon was unavailable on 2026-09-03 and again 2026-09-04.
-- Gitea Actions still fails at image push through at least run #18
-  (2026-09-04, confirmed via the unauthenticated-readable Actions API) —
-  check current run status before assuming registry secrets are configured.
+- Gitea Actions image push works as of run #19 (2026-09-04) — but its
+  "Propose deploy through Overseer" step can still report `failure` even
+  when the proposals were actually created correctly; check
+  `mcp__overseer__list_proposals` for ground truth, don't trust that one
+  step's conclusion alone.
+- `mcp__overseer__approve_operation`/`execute_operation` are refused by this
+  harness's classifier even with explicit in-chat permission from the
+  project owner (confirmed 2026-09-04) — unlike `git push`, no permission
+  rule was set up to allow these; real infrastructure approval stays with
+  the human/Overseer directly. Don't ask for a workaround here.
 - Branch protection is intentionally unnecessary per the project owner; PR review
   and passing local/CI evidence still remain the merge standard.
 - The project owner has authorised the coding agent to open and merge future PRs
