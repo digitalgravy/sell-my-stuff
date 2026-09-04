@@ -80,15 +80,29 @@ token, or open the PR link the agent prints after pushing a feature branch.
 
 ## Next up
 
-- [ ] Run an actual real-photo capture → worker → facts-written test locally
-      (`CAPTURE_API_ENABLED=true`, `SELL_STORAGE_PATH` set, `npm run worker:dev`)
-      now that both `ANTHROPIC_API_KEY` and `DATABASE_URL` resolve locally.
+- [ ] Finish the real-photo capture → worker → facts-written test locally
+      (`CAPTURE_API_ENABLED=true`, `SELL_STORAGE_PATH` set, `npm run worker:dev`).
+      Run 2026-09-04 confirmed the pipeline works end-to-end up through the
+      real Anthropic call — upload, storage, job claim, photo read-back,
+      real API call, error recording and retry all verified — but the
+      account's Anthropic credit balance was too low, so a full success
+      (facts actually written, item reaching `RESEARCHING`/`NEEDS_INFORMATION`)
+      hasn't been observed yet. Re-run once credits are added.
 - [ ] Provision a durable upload storage volume (via `container.volumes`,
       which the manifest schema already supports) and redeploy (a redeploy
       of an existing container, so no new DNS/proxy proposals this time).
 - [ ] Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and
       redeploy.
 - [ ] Decide the production identity boundary after checking trusted-device conventions.
+- [ ] Track AI/operational cost per item (starting with the Anthropic vision
+      call's actual token usage from the API response) and factor it into
+      the eventual sale profitability/balance-sheet calculation, once a
+      valuation/sales data model exists. Rough cost model as of 2026-09-04
+      (Claude Sonnet 5, $2/$10 per MTok input/output): ~1–2.5 cents per item
+      for a 2–6 photo identification call, regardless of the iPhone's
+      capture resolution (Anthropic's vision API downscales any image to a
+      ~1,600-token budget before processing). No cost tracking exists yet —
+      `item_facts`/`jobs` don't record token usage or spend anywhere.
 - [ ] Add component, accessibility and mobile E2E coverage for capture.
 
 ## Secrets access
