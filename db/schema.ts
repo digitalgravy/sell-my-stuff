@@ -1,8 +1,10 @@
 import {
+  boolean,
   index,
   integer,
   pgEnum,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -39,6 +41,14 @@ export const jobState = pgEnum('job_state', [
   'SUCCEEDED',
   'FAILED',
   'CANCELLED',
+]);
+
+export const factOrigin = pgEnum('fact_origin', [
+  'user_evidence',
+  'image_inference',
+  'web_research',
+  'manufacturer_data',
+  'user_confirmed',
 ]);
 
 export const items = pgTable(
@@ -96,6 +106,10 @@ export const jobs = pgTable(
     idempotencyKey: text('idempotency_key').notNull(),
     attempt: integer('attempt').notNull().default(0),
     progress: integer('progress').notNull().default(0),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lockedAt: timestamp('locked_at', { withTimezone: true }),
     lastError: text('last_error'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -107,5 +121,32 @@ export const jobs = pgTable(
   (table) => [
     uniqueIndex('jobs_idempotency_key_unique').on(table.idempotencyKey),
     index('jobs_state_created_idx').on(table.state, table.createdAt),
+  ],
+);
+
+export const itemFacts = pgTable(
+  'item_facts',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    field: text('field').notNull(),
+    value: text('value').notNull(),
+    confidence: real('confidence').notNull(),
+    origin: factOrigin('origin').notNull(),
+    evidence: text('evidence'),
+    source: text('source'),
+    retrievedAt: timestamp('retrieved_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    userConfirmed: boolean('user_confirmed').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('item_facts_item_idx').on(table.itemId),
+    uniqueIndex('item_facts_item_field_unique').on(table.itemId, table.field),
   ],
 );

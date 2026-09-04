@@ -9,8 +9,16 @@ This roadmap preserves completed history. Items move between sections as evidenc
 - [x] Define the PostgreSQL item/photo/job schema, migration and feature-gated upload contract.
 - [ ] Provision PostgreSQL and durable upload storage through Overseer, then enable and integration-test capture.
 - [ ] Establish mobile capture quality: multi-photo, HEIC, drag/drop, clipboard, retries and clear progress.
-- [ ] Establish the evidence/confidence model before any AI-generated fact reaches a listing.
+- [x] Establish the evidence/confidence model before any AI-generated fact reaches a listing.
+  - `item_facts` table (value/confidence/origin/evidence/source/retrieval
+    timestamp/user-confirmed) plus the first schema-validated producer,
+    `AnthropicVisionProvider` → `runInspectImagesJob`. One current row per
+    field so far, not a full historical ledger.
 - [ ] Research current eBay API and authenticated UI capabilities; record research and publishing ADRs.
+- [ ] Convert HEIC/HEIF photos to JPEG/PNG before vision inspection (Claude
+      vision does not accept HEIC/HEIF; currently a clear, caught error).
+- [ ] Replace the illustrative "3 things need you" / "Working in the
+      background" queue data with real items and `identity.open_questions` facts.
 
 ## Next
 

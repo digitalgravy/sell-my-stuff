@@ -10,6 +10,8 @@ npm run dev
 The normal local UI does not need infrastructure. To exercise durable capture,
 configure a disposable PostgreSQL database and upload directory, run
 `npm run db:migrate`, then start the app with `CAPTURE_API_ENABLED=true`.
+Run `npm run worker:dev` for the source-mode inspection worker. A normal
+`npm run build` also creates `dist/worker.mjs`, which `npm run worker` executes.
 
 Work on a short-lived branch. Keep `main` known-good, use Conventional Commits, and update `PROJECT_STATUS.md` and `LLM_HANDOFF.md` in every meaningful session.
 

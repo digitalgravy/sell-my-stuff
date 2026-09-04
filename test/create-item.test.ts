@@ -22,6 +22,12 @@ class MemoryObjectStore implements ObjectStore {
     return { key, byteSize: body.byteLength };
   }
 
+  async get(key: string) {
+    const body = this.objects.get(key);
+    if (!body) throw new Error(`No object stored for ${key}`);
+    return body;
+  }
+
   async remove(key: string) {
     this.objects.delete(key);
     this.removed.push(key);

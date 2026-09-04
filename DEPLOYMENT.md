@@ -9,6 +9,6 @@ The first deployment requires separate container, DNS and reverse-proxy proposal
 The application is a standard self-hosted Next.js Node server built with
 `output: 'standalone'`. The production image runs as the unprivileged `node`
 user. Before enabling capture, provision PostgreSQL and a durable upload volume,
-apply `drizzle/0000_equal_swarm.sql` with `npm run db:migrate`, configure
+apply all checked-in migrations with `npm run db:migrate`, configure
 `DATABASE_URL` and `SELL_STORAGE_PATH`, and only then change
 `CAPTURE_API_ENABLED` to `true` through the Overseer deployment flow.

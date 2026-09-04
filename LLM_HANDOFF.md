@@ -1,6 +1,6 @@
 # LLM handoff
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ## Project
 
@@ -11,8 +11,10 @@ Read `BRIEF.md` before changing scope.
 
 ## Current state
 
-- Gitea PR #1 is merged. `main` is known-good at `40966a2`.
-- Active branch: `codex/item-persistence`; PR not yet opened.
+- Gitea PRs #1 and #2 are merged. `main` is known-good at `1f21d8c`.
+- Active branch: `codex/vision-worker`; delivery PR #3.
+- The branch contains the reviewed UI redesign and worker/vision slice
+  described below.
 - `origin` is authoritative Gitea; `github` is the GitHub mirror.
 - The app now uses standard Next.js 16 Node self-hosting with standalone output,
   not the initial Cloudflare/Vinext prototype runtime.
@@ -20,13 +22,97 @@ Read `BRIEF.md` before changing scope.
   queued success state after a 201 response.
 - `db/schema.ts` and `drizzle/0000_equal_swarm.sql` define the initial item,
   photo and durable-job records with revisions and idempotency.
+  `drizzle/0001_clean_magma.sql` adds `item_facts` (confidence/origin/
+  evidence/source/retrieval-timestamp records per the brief's provenance
+  model — see "Worker and vision slice" below). `drizzle/0002_wakeful_moondragon.sql`
+  adds the job availability and lease timestamps used for safe retries.
 - Uploads are signature-verified, bounded to 12 photos / 25 MB each / 150 MB
   total, written through an object-store adapter, and cleaned up if the database
   transaction fails.
-- The first object-store implementation writes to `SELL_STORAGE_PATH`.
+- The first object-store implementation writes to `SELL_STORAGE_PATH`; it now
+  also supports reading a stored object back (`ObjectStore.get`), which the
+  worker needs.
 - Production capture remains intentionally disabled with
   `CAPTURE_API_ENABLED=false`; no database or upload volume exists yet.
 - Nothing is deployed.
+
+## UI redesign
+
+Done in response to direct user feedback, in this order:
+1. Swapped the serif `Newsreader` display font for `Bricolage Grotesque`.
+2. User said small text still looked bad — split into two fonts: Bricolage
+   Grotesque only on the ~4 largest headings (`font-display`), and `Inter` as
+   the base font for everything else (was Geist Sans; Geist Sans import was
+   removed entirely). Also bumped several caption/label sizes that were
+   sitting at 10–11px up to 12–15px.
+3. User asked for a sleeker, darker, blue/purple palette instead of the
+   warm green/cream one, "doesn't need to sell itself". Rewrote every color
+   token in `app/globals.css` (`:root`, `.dark`, and the
+   `prefers-color-scheme: dark` block) to an indigo/violet OKLCH palette,
+   including drop-shadow tints and the queue-icon gradient hexes in
+   `app/page.tsx`, and updated the `themeColor` meta in `app/layout.tsx`.
+4. User reported the queue-row byline text ("Checking the exact model and
+   recent sales" etc.) was still too small/faint on a real screenshot at
+   native scale — bumped that line from `text-xs` to `text-sm` + `font-medium`,
+   and brightened `--muted-foreground` in dark mode (`oklch(0.68 ...)` →
+   `oklch(0.735 ...)`) for better contrast against the near-black background.
+
+Verified visually via the `claude-in-chrome` skill after each pass, plus
+`typecheck`/`lint`/`test`/`build` every time. Not yet re-confirmed with the
+user as fully resolved — check whether they gave further feedback before
+assuming this is final.
+
+## Worker and vision slice
+
+Implements the "Now up" items "Implement the worker and real vision-provider
+adapter" and a first version of the evidence/confidence model:
+
+- `server/ai/vision-provider.ts` — `VisionIdentificationProvider` port,
+  `identificationResultSchema` (Zod), `UnsupportedPhotoFormatError`.
+- `server/ai/anthropic-vision-provider.ts` — the only concrete adapter so
+  far. Uses `@anthropic-ai/sdk`'s `client.messages.parse` with
+  `output_config.format: zodOutputFormat(identificationResultSchema)` so a
+  malformed model response fails validation instead of becoming trusted
+  data. The default model is `claude-sonnet-5`, overridable with
+  `ANTHROPIC_VISION_MODEL`. Lazily reads `ANTHROPIC_API_KEY` via
+  `getAnthropicVisionProvider()` — throws a clear error if unset, mirroring
+  `getDatabase()`'s pattern for `DATABASE_URL`.
+- `db/schema.ts` — new `item_facts` table + `fact_origin` enum. One current
+  row per `(itemId, field)` (upsert on conflict) — **not** a full historical
+  ledger; see PROJECT_STATUS.md technical debt.
+- `server/items/research-repository.ts` / `postgres-research-repository.ts`
+  — `ResearchJobRepository` port + Postgres implementation. Job claiming
+  uses `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1)`
+  so multiple worker processes can run safely against the same queue. Claims
+  have a 15-minute lease, crashed claims are reclaimed, and retries use bounded
+  exponential backoff rather than hammering the provider.
+- `server/jobs/inspect-images-job.ts` — `runInspectImagesJob()`: claims one
+  `inspect_images` job, reads photos back through `ObjectStore.get`,
+  base64-encodes them, calls the vision port, writes the leading candidate's
+  fields as `item_facts` rows, marks photos `READY`, and transitions the
+  item to `RESEARCHING` (confidence ≥ 0.7 and no open questions) or
+  `NEEDS_INFORMATION` (otherwise). On failure, retries up to
+  `DEFAULT_MAX_ATTEMPTS` (5) by requeuing, then marks the job permanently
+  `FAILED` with `lastError` set. The item has no distinct terminal/error
+  status yet if that happens — see technical debt.
+- `server/jobs/run-inspect-images-worker.ts` — poll-loop source entrypoint.
+  `npm run build` bundles it into `dist/worker.mjs`; `npm run worker` executes
+  the production bundle, matching the brief's conceptual `sell-worker` process
+  without a separate deployment yet.
+- Tests: `test/inspect-images-job.test.ts` (in-memory fakes for the
+  repository/object store/vision provider — claim/succeed, low-confidence
+  routing, no-job-available, retry-then-give-up) and
+  `test/vision-provider.test.ts` (schema acceptance/rejection). 23 tests
+  pass in total (`npm test`).
+- **Not verified against real infrastructure**: no `ANTHROPIC_API_KEY` and
+  no reachable Postgres in this environment (Docker/OrbStack daemon down),
+  so this is unit-tested against fakes only.
+- **Known gap**: Claude vision only accepts JPEG/PNG/GIF/WebP. HEIC/HEIF
+  (the default iPhone format, already accepted at capture time) is rejected
+  by the adapter with a clear error rather than a crash — a conversion step
+  is still needed before this works on real captures. See ADR 0007's
+  Implementation note.
+- ADR 0007 updated with an "Implementation" section describing all of the above.
 
 ## Architecture direction
 
@@ -41,7 +127,13 @@ See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
 
 ## Overseer facts
 
-- Local Overseer repo: `../overseer`; inspected `main` was `e9a6f5f`.
+- Local Overseer repo: `../overseer`; its `CURRENT_STATE.md` (as of
+  2026-08-26) shows M0–M5 complete plus M6 (Home Assistant) started, with
+  real mutations proven against Proxmox/Portainer/UniFi. It has **no
+  PostgreSQL/Redis/object-storage provisioning capability recorded** — only
+  Proxmox, Portainer, UniFi and (in progress) Home Assistant adapters.
+  Provisioning a database for this project is therefore new Overseer work,
+  not a reuse of an existing operation.
 - Persistent `overseer-core` MCP is at `http://overseer.internal:3900/mcp` and
   bearer-token authenticated. Never commit its token or project MCP config.
 - Gitea Actions builds/tests/pushes immutable images and can propose deployment
@@ -54,20 +146,28 @@ See `ARCHITECTURE.md`, `SECURITY.md` and `docs/adr/`.
 
 ## Exact next action
 
-1. Finish and merge the item-persistence PR after the full quality gate.
-2. Use Overseer to prepare PostgreSQL, durable-volume and first-deploy proposals;
-   do not guess addresses, ports or secret values.
-3. Apply the Drizzle migration, configure `DATABASE_URL` and
-   `SELL_STORAGE_PATH`, and perform a real capture/restart/restore test.
-4. Only then set `CAPTURE_API_ENABLED=true` through a reviewed deploy proposal.
-5. Implement idempotent `inspect_images` claiming/retry behavior and the first
-   schema-validated vision adapter.
+1. Commit, submit and merge the UI plus worker/vision branch after final review.
+2. Prepare the missing PostgreSQL/durable-volume provisioning capability in
+   Overseer; its current deploy manifest only models one application container
+   and would incorrectly create an HTTP proxy for a database dependency.
+3. Configure Gitea repository registry secrets so the already-successful image
+   build can push and reach the proposal step.
+4. Once infrastructure exists: apply all Drizzle migrations, configure
+   `DATABASE_URL`, `SELL_STORAGE_PATH` and `ANTHROPIC_API_KEY`, and perform a
+   real capture → worker → facts-written test end to end.
+5. Only then set `CAPTURE_API_ENABLED=true` through a reviewed deploy proposal.
+6. Add HEIC/HEIF → JPEG/PNG conversion so real iPhone photos reach
+   `AnthropicVisionProvider` (currently rejected with a clear error).
+7. Build the "3 things need you" UI backed by `identity.open_questions`
+   facts, replacing the current illustrative queue data in `app/page.tsx`.
 
 ## Commands
 
 ```sh
 npm install
 npm run dev
+npm run worker:dev   # source-mode worker (needs DATABASE_URL, ANTHROPIC_API_KEY)
+npm run worker       # production bundle created by npm run build
 npm test
 npm run typecheck
 npm run lint
@@ -83,6 +183,7 @@ npm run db:migrate
 - Production is a container managed by Overseer/Portainer on VLAN 5.
 - Durable capture additionally requires `DATABASE_URL`, `SELL_STORAGE_PATH` and
   `CAPTURE_API_ENABLED=true`.
+- The worker additionally requires `ANTHROPIC_API_KEY` (and `DATABASE_URL`).
 - No credentials or authenticated browser state are present in this repo.
 
 ## External integration state
@@ -91,16 +192,24 @@ npm run db:migrate
   in `docs/research/ebay-capabilities-2026-09-03.md`.
 - Seller Hub reported that account details need updating before listing again.
 - Browser Operator: architecture only, no implementation/profile.
-- AI, marketplace, carrier and packaging adapters: not implemented.
+- AI provider: first vision adapter implemented (Anthropic only, see above),
+  unverified against the real API. Marketplace, carrier and packaging
+  adapters: not implemented.
 
 ## Known traps
 
 - Do not create a duplicate repo via `overseer new-project`.
 - Do not enable capture before both the migration and durable volume are proven.
 - Do not put uploads on the container's ephemeral writable layer.
-- Do not embed Overseer tokens, database URLs or browser state in source/logs.
-- The local Docker daemon was unavailable on 2026-09-03.
+- Do not embed Overseer tokens, database URLs or API keys/secrets in source/logs.
+- The local Docker daemon was unavailable on 2026-09-03 and again 2026-09-04.
 - Gitea Actions has no repository secrets, so image push/proposal cannot succeed
   until credentials are configured through an approved mechanism.
 - Branch protection is intentionally unnecessary per the project owner; PR review
   and passing local/CI evidence still remain the merge standard.
+- `AnthropicVisionProvider` will throw immediately and clearly if
+  `ANTHROPIC_API_KEY` is unset — this is intended (fail fast), not a bug to
+  "fix" by adding a fallback/mock provider in production code.
+- Overseer's current application deploy flow cannot safely model the Postgres
+  dependency: it provisions one container plus app DNS/HTTP proxy. Extend its
+  proposal model rather than abusing that path or publishing Postgres blindly.

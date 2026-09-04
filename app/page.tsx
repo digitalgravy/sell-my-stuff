@@ -31,21 +31,21 @@ const queue = [
     detail: 'Checking the exact model and recent sales',
     state: 'Researching',
     progress: 64,
-    accent: 'from-[#d9e2df] to-[#aebbb8]',
+    accent: 'from-[#dbe1f5] to-[#a7b3e0]',
   },
   {
     name: 'NVIDIA graphics card',
     detail: 'One label photo will confirm the variant',
     state: 'Needs you',
     progress: 82,
-    accent: 'from-[#d8d9cb] to-[#aeb19b]',
+    accent: 'from-[#dcd6f2] to-[#a99fda]',
   },
   {
     name: 'Sony headphones',
     detail: 'Draft listing and valuation are ready',
     state: 'Ready',
     progress: 100,
-    accent: 'from-[#cfcbd0] to-[#a9a4ad]',
+    accent: 'from-[#e5d3f5] to-[#bb98db]',
   },
 ];
 
@@ -171,14 +171,14 @@ export default function Home() {
       <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-[1480px] items-center justify-between px-4 sm:px-7 lg:px-10">
           <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-[0_7px_18px_rgba(32,70,58,.18)]">
+            <div className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-[0_7px_18px_rgba(46,30,92,.18)]">
               <Sparkles className="size-[18px]" aria-hidden="true" />
             </div>
             <div>
-              <p className="font-display text-[17px] font-semibold leading-none tracking-[-0.025em]">
+              <p className="text-[17px] font-semibold leading-none tracking-[-0.025em]">
                 Sell My Stuff
               </p>
-              <p className="mt-1 hidden text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground sm:block">
+              <p className="mt-1 hidden text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground sm:block">
                 Photograph clutter. Turn it into money.
               </p>
             </div>
@@ -277,7 +277,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => inputRef.current?.click()}
-                  className="camera-button group relative grid size-28 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_22px_55px_rgba(32,70,58,.25)] transition hover:-translate-y-1 hover:shadow-[0_28px_65px_rgba(32,70,58,.3)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 active:scale-[.98] motion-reduce:transform-none sm:size-32"
+                  className="camera-button group relative grid size-28 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_22px_55px_rgba(46,30,92,.25)] transition hover:-translate-y-1 hover:shadow-[0_28px_65px_rgba(46,30,92,.3)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 active:scale-[.98] motion-reduce:transform-none sm:size-32"
                   aria-label="Take or choose photos"
                 >
                   <Camera
@@ -292,11 +292,11 @@ export default function Home() {
                 <h2 className="font-display mt-7 text-xl font-semibold tracking-[-0.025em]">
                   Take or add photos
                 </h2>
-                <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                <p className="mt-2 max-w-sm text-[15px] leading-6 text-muted-foreground">
                   Front, back, labels and any wear are useful. Add several items
                   now—you don’t need to wait between them.
                 </p>
-                <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-medium text-muted-foreground">
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm font-medium text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <Upload className="size-3.5" /> Drop files
                   </span>
@@ -317,7 +317,7 @@ export default function Home() {
                 <h2 className="font-display mt-4 text-2xl font-semibold tracking-[-0.03em]">
                   I’ll take it from here
                 </h2>
-                <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+                <p className="mt-2 max-w-md text-[15px] leading-6 text-muted-foreground">
                   Your{' '}
                   {photos.length === 1
                     ? 'photo is'
@@ -341,11 +341,11 @@ export default function Home() {
               <div className="flex min-h-[326px] flex-col sm:min-h-[392px]">
                 <div className="flex items-center justify-between px-1 pb-4">
                   <div>
-                    <p className="font-display text-lg font-semibold">
+                    <p className="text-lg font-semibold">
                       {photos.length} {photos.length === 1 ? 'photo' : 'photos'}{' '}
                       added
                     </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
+                    <p className="mt-0.5 text-sm text-muted-foreground">
                       Add more angles if they’ll help identify the item.
                     </p>
                   </div>
@@ -391,7 +391,7 @@ export default function Home() {
                   </button>
                 </div>
                 <Button
-                  className="mt-4 h-12 w-full rounded-2xl text-[15px] shadow-[0_12px_28px_rgba(32,70,58,.18)]"
+                  className="mt-4 h-12 w-full rounded-2xl text-[15px] shadow-[0_12px_28px_rgba(46,30,92,.18)]"
                   onClick={submitPhotos}
                   disabled={uploading}
                 >
@@ -431,10 +431,10 @@ export default function Home() {
                 key={label}
                 className="rounded-2xl border border-border/70 bg-card/60 px-3 py-4 sm:px-5"
               >
-                <p className="font-display text-lg font-semibold tracking-[-0.03em] sm:text-2xl">
+                <p className="text-lg font-semibold tracking-[-0.03em] sm:text-2xl">
                   {value}
                 </p>
-                <p className="mt-1 text-[11px] leading-4 text-muted-foreground sm:text-xs">
+                <p className="mt-1 text-xs leading-4 text-muted-foreground sm:text-sm">
                   {label}
                 </p>
               </div>
@@ -443,7 +443,7 @@ export default function Home() {
         </section>
 
         <aside className="min-w-0 lg:pt-5">
-          <section className="rounded-[1.75rem] border border-border/70 bg-card/85 p-5 shadow-[0_18px_60px_rgba(46,48,41,.07)] sm:p-6">
+          <section className="rounded-[1.75rem] border border-border/70 bg-card/85 p-5 shadow-[0_18px_60px_rgba(18,16,36,.07)] sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-strong">
@@ -462,10 +462,8 @@ export default function Home() {
                 <Camera className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="font-display truncate font-semibold">
-                  NVIDIA graphics card
-                </p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                <p className="truncate font-semibold">NVIDIA graphics card</p>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">
                   Photograph the label on the back so I can confirm the model.
                 </p>
               </div>
@@ -476,10 +474,8 @@ export default function Home() {
                 <PackageCheck className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="font-display truncate font-semibold">
-                  Sony headphones
-                </p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                <p className="truncate font-semibold">Sony headphones</p>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">
                   Review the £84 sale proposal.
                 </p>
               </div>
@@ -496,10 +492,10 @@ export default function Home() {
           <section className="mt-5">
             <div className="mb-3 flex items-center justify-between px-1">
               <div>
-                <h2 className="font-display text-lg font-semibold tracking-[-0.025em]">
+                <h2 className="text-lg font-semibold tracking-[-0.025em]">
                   Working in the background
                 </h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <p className="mt-0.5 text-sm text-muted-foreground">
                   Everything keeps moving while you’re away.
                 </p>
               </div>
@@ -534,12 +530,12 @@ export default function Home() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="font-display truncate text-sm font-semibold">
+                      <p className="truncate text-base font-semibold">
                         {item.name}
                       </p>
                       <span
                         className={cn(
-                          'shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em]',
+                          'shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em]',
                           item.state === 'Needs you'
                             ? 'text-warning'
                             : item.state === 'Ready'
@@ -550,7 +546,7 @@ export default function Home() {
                         {item.state}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                    <p className="mt-1 truncate text-sm font-medium text-muted-foreground">
                       {item.detail}
                     </p>
                     <Progress

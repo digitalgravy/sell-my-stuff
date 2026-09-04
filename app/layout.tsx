@@ -1,16 +1,16 @@
 import type { Metadata, Viewport } from 'next';
-import { Geist, Geist_Mono, Newsreader } from 'next/font/google';
+import { Geist_Mono, Bricolage_Grotesque, Inter } from 'next/font/google';
 import './globals.css';
 
-const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
 });
-const newsreader = Newsreader({
-  variable: '--font-newsreader',
+const bricolageGrotesque = Bricolage_Grotesque({
+  variable: '--font-bricolage-grotesque',
   subsets: ['latin'],
 });
+const inter = Inter({ variable: '--font-inter', subsets: ['latin'] });
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://sell.26fe.uk'),
@@ -40,8 +40,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f5f1e8' },
-    { media: '(prefers-color-scheme: dark)', color: '#18231d' },
+    { media: '(prefers-color-scheme: light)', color: '#f4f7fb' },
+    { media: '(prefers-color-scheme: dark)', color: '#090d17' },
   ],
   width: 'device-width',
   initialScale: 1,
@@ -54,7 +54,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} antialiased`}
+        className={`${geistMono.variable} ${bricolageGrotesque.variable} ${inter.variable} antialiased`}
       >
         {children}
       </body>

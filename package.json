@@ -7,8 +7,11 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run build:worker && next build",
+    "build:worker": "esbuild server/jobs/run-inspect-images-worker.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/worker.mjs",
     "start": "next start -H 0.0.0.0 -p 3000",
+    "worker": "node dist/worker.mjs",
+    "worker:dev": "node --import tsx server/jobs/run-inspect-images-worker.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "test": "node --import tsx --test test/**/*.test.ts",
@@ -17,6 +20,7 @@
     "format": "oxfmt"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.123.0",
     "@base-ui/react": "1.7.0",
     "@shadcn/react": "0.3.0",
     "class-variance-authority": "0.7.1",
@@ -46,6 +50,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "drizzle-kit": "0.31.10",
+    "esbuild": "0.28.2",
     "oxfmt": "0.61.0",
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
