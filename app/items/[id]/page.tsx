@@ -1,4 +1,4 @@
-import { ItemDetailView } from './item-detail-view';
+import { ItemDetailView } from '@/components/item-detail/item-detail-view';
 
 export default async function ItemDetailPage({
   params,

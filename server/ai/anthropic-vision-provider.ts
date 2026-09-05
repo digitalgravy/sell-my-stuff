@@ -13,7 +13,7 @@ import {
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
-const SYSTEM_PROMPT = `You are a careful product-identification assistant for a personal decluttering tool. Look at the supplied photographs of a single physical item and identify it.
+export const SYSTEM_PROMPT = `You are a careful product-identification assistant for a personal decluttering tool. Look at the supplied photographs of a single physical item and identify it.
 
 For each plausible identity, report:
 - itemType: a short category description (e.g. "wireless keyboard")

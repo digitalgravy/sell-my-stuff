@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
 import { identificationRuns, itemFacts, items, jobs, photos } from '@/db/schema';
@@ -6,12 +8,23 @@ import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 
 import { deriveActivityState } from './homepage-snapshot';
 import type {
+  CorrectFactOutcome,
   ItemDetail,
   ItemDetailFact,
+  ItemDetailPhoto,
   ItemDetailRepository,
-  ItemDetailRun,
   RetryOutcome,
 } from './item-detail-repository';
+import { buildStepsFromRuns, deriveAttention, derivePhases } from './item-detail-view-model';
+
+const IDENTITY_FACT_FIELDS = new Set([
+  'identity.item_type',
+  'identity.manufacturer',
+  'identity.family',
+  'identity.model',
+  'identity.model_numbers',
+  'identity.colour',
+]);
 
 export class PostgresItemDetailRepository implements ItemDetailRepository {
   async getItemDetail(itemId: string): Promise<ItemDetail | null> {
@@ -30,13 +43,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
 
     const [photoRows, factRows, runRows, [job]] = await Promise.all([
       database
-        .select({
-          id: photos.id,
-          originalName: photos.originalName,
-          mediaType: photos.mediaType,
-          position: photos.position,
-          status: photos.status,
-        })
+        .select({ id: photos.id, position: photos.position })
         .from(photos)
         .where(eq(photos.itemId, itemId))
         .orderBy(asc(photos.position)),
@@ -47,9 +54,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
           confidence: itemFacts.confidence,
           origin: itemFacts.origin,
           evidence: itemFacts.evidence,
-          source: itemFacts.source,
           retrievedAt: itemFacts.retrievedAt,
-          userConfirmed: itemFacts.userConfirmed,
         })
         .from(itemFacts)
         .where(eq(itemFacts.itemId, itemId))
@@ -72,12 +77,33 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .where(eq(identificationRuns.itemId, itemId))
         .orderBy(desc(identificationRuns.startedAt)),
       database
-        .select({ state: jobs.state })
+        .select({ state: jobs.state, lastError: jobs.lastError })
         .from(jobs)
         .where(and(eq(jobs.itemId, itemId), eq(jobs.type, INSPECT_IMAGES_JOB_TYPE)))
         .orderBy(desc(jobs.updatedAt))
         .limit(1),
     ]);
+
+    const facts: ItemDetailFact[] = factRows.map((row) => ({
+      field: row.field,
+      value: parseFactValue(row.value),
+      confidence: row.confidence,
+      origin: row.origin,
+      evidence: row.evidence ?? undefined,
+      retrievedAt: row.retrievedAt.toISOString(),
+    }));
+
+    const hasIdentityFacts = factRows.some((row) => IDENTITY_FACT_FIELDS.has(row.field));
+    const openQuestions = parseStringArray(
+      factRows.find((row) => row.field === 'identity.open_questions')?.value,
+    );
+
+    const photoList: ItemDetailPhoto[] = photoRows.map((row, index) => ({
+      id: row.id,
+      url: `/api/items/${itemId}/photos/${row.id}`,
+      label: `Photo ${index + 1}`,
+      position: row.position,
+    }));
 
     return {
       id: item.id,
@@ -88,21 +114,16 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
           : deriveActivityState({ status: item.status, jobState: job?.state }),
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
-      photos: photoRows,
-      facts: factRows.map(
-        (row): ItemDetailFact => ({
-          field: row.field,
-          value: parseFactValue(row.value),
-          confidence: row.confidence,
-          origin: row.origin,
-          evidence: row.evidence ?? undefined,
-          source: row.source ?? undefined,
-          retrievedAt: row.retrievedAt.toISOString(),
-          userConfirmed: row.userConfirmed,
-        }),
-      ),
-      runs: runRows.map(
-        (row): ItemDetailRun => ({
+      photos: photoList,
+      facts,
+      phases: derivePhases({ status: item.status, hasIdentityFacts }),
+      attention: deriveAttention({
+        status: item.status,
+        openQuestions,
+        lastError: job?.lastError ?? undefined,
+      }),
+      buildSteps: buildStepsFromRuns(
+        runRows.map((row) => ({
           id: row.id,
           attempt: row.attempt,
           provider: row.provider,
@@ -114,7 +135,8 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
           errorMessage: row.errorMessage ?? undefined,
           startedAt: row.startedAt.toISOString(),
           completedAt: row.completedAt.toISOString(),
-        }),
+        })),
+        photoRows.length,
       ),
     };
   }
@@ -174,6 +196,50 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       return { ok: true };
     });
   }
+
+  async correctFact(
+    itemId: string,
+    field: string,
+    value: string,
+  ): Promise<CorrectFactOutcome> {
+    const database = getDatabase();
+    const [item] = await database
+      .select({ id: items.id })
+      .from(items)
+      .where(eq(items.id, itemId));
+    if (!item) return { ok: false, reason: 'Item not found' };
+
+    await database
+      .insert(itemFacts)
+      .values({
+        id: randomUUID(),
+        itemId,
+        field,
+        value: JSON.stringify(value),
+        confidence: 1,
+        origin: 'user_confirmed',
+      })
+      .onConflictDoUpdate({
+        target: [itemFacts.itemId, itemFacts.field],
+        set: {
+          value: sql`excluded.value`,
+          confidence: sql`excluded.confidence`,
+          origin: sql`excluded.origin`,
+          retrievedAt: sql`now()`,
+        },
+      });
+
+    return { ok: true };
+  }
+
+  async deleteItem(itemId: string): Promise<{ ok: boolean }> {
+    const database = getDatabase();
+    const result = await database
+      .delete(items)
+      .where(eq(items.id, itemId))
+      .returning({ id: items.id });
+    return { ok: result.length > 0 };
+  }
 }
 
 function parseFactValue(rawValue: string): unknown {
@@ -181,5 +247,17 @@ function parseFactValue(rawValue: string): unknown {
     return JSON.parse(rawValue);
   } catch {
     return rawValue;
+  }
+}
+
+function parseStringArray(rawValue: string | undefined): string[] {
+  if (!rawValue) return [];
+  try {
+    const parsed: unknown = JSON.parse(rawValue);
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+  } catch {
+    return [];
   }
 }
