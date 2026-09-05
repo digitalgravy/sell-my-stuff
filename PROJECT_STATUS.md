@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 ## Current phase
 
@@ -164,6 +164,37 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
         value/complexity (e.g. Haiku for a quick first pass, Sonnet/Opus
         only when needed) rather than always defaulting to one model.
 - [ ] Add component, accessibility and mobile E2E coverage for capture.
+- [ ] Milestone 2, Browser Operator: `sell-browser`, a separate Overseer
+      project (`overseer-projects/sell-browser`, own repo/CI/manifest) —
+      see ADR 0005/0008 for the design this implements. Started
+      2026-09-05.
+  - [x] Session-ownership state machine (`IDLE`/`AGENT_CONTROLLED`/
+        `WAITING_FOR_HUMAN`/`HUMAN_CONTROLLED`/`RECONCILING_AFTER_HUMAN`/
+        `ERROR`) and its HTTP API, fully tested.
+  - [x] Dockerfile: Chromium + Xvfb + x11vnc + noVNC on Microsoft's
+        Playwright image. Verified locally end-to-end (health check,
+        session transitions, noVNC page all respond; `docker run image
+        npm test` — what its CI actually runs — exits 0). Found and
+        fixed a real bug in the process: `tzdata`'s interactive timezone
+        prompt silently hung `apt-get install` with no output at all in
+        a non-interactive build, misread at first as a slow image pull.
+  - [ ] Launch a real persistent-context Chromium and wire it to the
+        session state machine (currently `src/app.ts` has no Playwright
+        reference at all — the API only manages state).
+  - [ ] First-login bootstrap through the noVNC human-takeover view.
+  - [ ] `EbayProductResearchBrowserProvider` (the `ComparableSalesProvider`
+        port from `BRIEF.md`) against Seller Hub Product Research —
+        confirmed accessible with the project owner's authenticated
+        session and the strongest known evidence source (see
+        `docs/research/ebay-capabilities-2026-09-03.md`).
+  - [ ] `research_comparable_sales` job type here, reusing the existing
+        `jobs`-table claim/lease pattern, feeding the already-built
+        Evidence tab on the item detail page.
+  - [ ] Confirm the real host path for `sell-browser`'s
+        `overseer-app.yaml` `container.volumes` entry (currently a
+        placeholder, `/srv/sell-browser/profile`) before its first
+        deploy is approved — without it, login is lost on every
+        redeploy.
 
 ## Secrets access
 

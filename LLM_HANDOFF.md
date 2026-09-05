@@ -340,24 +340,60 @@ completed" for full detail on each:
   `NEEDS_INFORMATION` items — the detail page shows facts but has no write
   action yet for user-supplied answers.
 
+## Browser Operator (`sell-browser`), started 2026-09-05
+
+A separate Overseer project, not a folder in this repo:
+`gitea@git.26fe.uk:overseer-projects/sell-browser.git`
+(`http://gitea.internal:3000/overseer-projects/sell-browser`). Deployed via
+its own `overseer-app.yaml`/CI, on the same Jupiter/Docker infrastructure as
+this app — confirmed with the project owner that "Jupiter" is the Proxmox
+host, not the separate always-on macOS machine, which remains only a
+possible future fallback. See ADR 0005/0008 for the design; that repo's own
+`README.md` "Status" section is the authoritative list of what's real vs.
+not yet built there — don't duplicate it here, it will drift.
+
+What exists (commit `8ae5a9e` there): the session-ownership state machine
+and its HTTP API, fully tested, and a Dockerfile that builds a headed
+Chromium + Xvfb + x11vnc + noVNC image, verified to actually boot all four
+processes and respond correctly. Nothing about Playwright, the actual
+browser session, or eBay Product Research extraction exists yet.
+
+Real bug found and fixed while building this: `tzdata` (pulled in by
+xvfb/x11vnc) prompts interactively for a timezone and silently hangs
+`apt-get install` with zero output in a non-interactive `docker build` —
+looked exactly like a slow base-image pull, wasn't. Fix is
+`ENV DEBIAN_FRONTEND=noninteractive` + a preset `TZ` before the `apt-get
+install` line. Worth remembering for any other Debian-based Dockerfile in
+this project's orbit.
+
 ## Exact next action
 
-1. Build the "answer the open question" action for `NEEDS_INFORMATION`
+1. Continue `sell-browser`: launch a real Playwright persistent-context
+   Chromium wired to the session state machine, then the first-login
+   bootstrap through noVNC, then `EbayProductResearchBrowserProvider`
+   against Seller Hub Product Research (confirmed accessible and the
+   strongest evidence source — see the research doc), then the
+   `research_comparable_sales` job type on this repo's side (reuses the
+   existing `jobs`-table claim/lease pattern, no new mechanism). Confirm
+   the real host path for its profile volume before that project's first
+   deploy is approved — `/srv/sell-browser/profile` in its
+   `overseer-app.yaml` is a placeholder.
+2. Build the "answer the open question" action for `NEEDS_INFORMATION`
    items on the item detail page (writes a `user_confirmed`/`user_evidence`
    fact, re-queues research) — the one deliberately-deferred piece of the
    detail page above.
-2. Condition/damage/wear assessment — design already agreed with the
+3. Condition/damage/wear assessment — design already agreed with the
    project owner (extends the existing automated-first, confidence-gated
    pattern used for identity facts); see PROJECT_STATUS.md's "Next up" for
    the full spec pointer (`BRIEF.md`'s "Condition model"/"Functional
    testing" sections) and the open same-call-vs-separate-stage question.
-3. Provision a durable upload storage volume (the manifest's
+4. Provision a durable upload storage volume (the manifest's
    `container.volumes` already supports this — hostPath/containerPath/
    readOnly — no new Overseer capability needed) and redeploy — this is a
    redeploy of an already-existing container, so only the container proposal
    is created, not new DNS/proxy proposals.
-4. Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and redeploy.
-5. Consider raising the `.internal`-vs-`.26fe.uk` NPM naming bug with the
+5. Only then set `CAPTURE_API_ENABLED=true` in `overseer-app.yaml` and redeploy.
+6. Consider raising the `.internal`-vs-`.26fe.uk` NPM naming bug with the
    Overseer building system so it doesn't need manual correction again.
 
 ## Handoff checklist
@@ -402,7 +438,11 @@ npm run db:migrate
 - eBay capability research and authenticated Seller Hub inspection are recorded
   in `docs/research/ebay-capabilities-2026-09-03.md`.
 - Seller Hub reported that account details need updating before listing again.
-- Browser Operator: architecture only, no implementation/profile.
+- Browser Operator: skeleton exists (`sell-browser`, its own Overseer
+  project — session-state machine, HTTP API, headed-Chromium Docker image,
+  all verified working locally) but no Playwright/browser-session code, no
+  authenticated profile, no research extraction yet — see "Browser
+  Operator (`sell-browser`), started 2026-09-05" above.
 - AI provider: first vision adapter implemented (Anthropic only, see above),
   unverified against the real API. Marketplace, carrier and packaging
   adapters: not implemented.

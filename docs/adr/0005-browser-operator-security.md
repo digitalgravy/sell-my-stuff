@@ -11,6 +11,13 @@ Run one persistent headed Chromium service with an isolated durable profile, vir
 
 Human input always wins. CAPTCHA/MFA pauses for takeover. No public CDP, cookies in application APIs, secrets in prompts, security-control bypass or blind resumption after takeover.
 
-## Open point
+## Resolution (2026-09-05)
 
-Select the streaming/control implementation after a deployment proof on the existing Docker host.
+Streaming/control implementation: `x11vnc` bound to the Xvfb display, fronted
+by `noVNC`/`websockify` for a browser-viewable remote session. Both are
+mature, dependency-light and well-documented inside a Debian-based
+Playwright container, and need nothing beyond a LAN-restricted port plus
+Overseer/Nginx Proxy Manager's existing basic-auth pattern to satisfy
+"authenticated remote-view channel" above — no new streaming stack to
+build or maintain. Superseded the earlier open point; keep this section as
+the record of that choice, not a question.

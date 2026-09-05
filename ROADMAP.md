@@ -6,6 +6,18 @@ This roadmap preserves completed history. Items move between sections as evidenc
 
 - [ ] Milestone 0: complete repository, CI, documentation, security and Overseer deployment foundations.
 - [ ] Milestone 1: deliver a real photo-to-draft vertical slice with durable server state.
+- [ ] Milestone 2: Browser Operator (`sell-browser`, its own Overseer project — see
+      [ADR 0005](docs/adr/0005-browser-operator-security.md)/[0008](docs/adr/0008-browser-operator-deployment.md)).
+  - [x] Scaffold the project, session-state machine and its HTTP API (tested), Dockerfile
+        (Playwright + Xvfb + x11vnc + noVNC on Jupiter/Docker infrastructure).
+  - [ ] Launch a real persistent-context Chromium and wire it to the session state machine.
+  - [ ] First-login bootstrap through the noVNC human-takeover view.
+  - [ ] `EbayProductResearchBrowserProvider` (the `ComparableSalesProvider` port from `BRIEF.md`) —
+        navigate Seller Hub Product Research, extract comparable sales into the `ComparableRecord` shape.
+  - [ ] `research_comparable_sales` job type on the `sell-my-stuff` side, reusing the existing
+        `jobs`-table claim/lease pattern, feeding the already-built Evidence tab.
+  - [ ] Provision the durable profile volume through Overseer (manifest field unconfirmed — resolve
+        alongside the still-open durable-upload-volume question below).
 - [x] Define the PostgreSQL item/photo/job schema, migration and feature-gated upload contract.
 - [ ] Provision PostgreSQL and durable upload storage through Overseer, then enable and integration-test capture.
 - [ ] Establish mobile capture quality: multi-photo, HEIC, drag/drop, clipboard, retries and clear progress.
@@ -22,7 +34,6 @@ This roadmap preserves completed history. Items move between sections as evidenc
 
 ## Next
 
-- [ ] Milestone 2: persistent Browser Operator on Jupiter/Docker infrastructure with secure human takeover.
 - [ ] Milestone 3: comparable cache, scoring and deterministic valuation.
 - [ ] Realtime cross-device progress with revision-safe updates.
 - [ ] PWA installation and offline-tolerant capture queue.
