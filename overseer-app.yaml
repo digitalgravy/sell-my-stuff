@@ -36,6 +36,11 @@ container:
     # runs injected into whatever page the user is on, so it can't use
     # the same-origin check every other mutating route uses).
     CAPTURE_INBOX_TOKEN: ${secret:CAPTURE_INBOX_TOKEN}
+    # Consumed by the inspect_images worker, which now runs inside this
+    # same container (see entrypoint.sh) -- without this the worker
+    # process crashes on startup and, by design, takes the whole
+    # container down with it (see entrypoint.sh's comment).
+    ANTHROPIC_API_KEY: ${secret:ANTHROPIC_API_KEY}
 
 network:
   hostname: sell

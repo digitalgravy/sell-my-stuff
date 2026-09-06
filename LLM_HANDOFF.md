@@ -141,7 +141,7 @@ adapter" and a first version of the evidence/confidence model:
   `FAILED` with `lastError` set. The item has no distinct terminal/error
   status yet if that happens — see technical debt.
 - `server/jobs/run-inspect-images-worker.ts` — poll-loop source entrypoint.
-  `npm run build` bundles it into `dist/worker.mjs`; `npm run worker` executes
+  `npm run build` bundles it into `dist/worker.cjs`; `npm run worker` executes
   the production bundle, matching the brief's conceptual `sell-worker` process
   without a separate deployment yet.
 - Tests: `test/inspect-images-job.test.ts` (in-memory fakes for the

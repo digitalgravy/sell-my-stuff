@@ -38,7 +38,7 @@ and the migration has been applied.
 
 `server/jobs/inspect-images-job.ts` implements the `inspect_images` stage of
 the agentic research workflow: identify. `npm run build` bundles a production
-worker at `dist/worker.mjs`; `npm run worker` runs its polling loop, matching the
+worker at `dist/worker.cjs`; `npm run worker` runs its polling loop, matching the
 conceptual `sell-worker` process from the brief without yet requiring a
 separate deployed service. A job is claimed with a Postgres
 `FOR UPDATE SKIP LOCKED` query (`PostgresResearchJobRepository.claimNextJob`)

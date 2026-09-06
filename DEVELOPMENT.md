@@ -11,7 +11,7 @@ The normal local UI does not need infrastructure. To exercise durable capture,
 configure a disposable PostgreSQL database and upload directory, run
 `npm run db:migrate`, then start the app with `CAPTURE_API_ENABLED=true`.
 Run `npm run worker:dev` for the source-mode inspection worker. A normal
-`npm run build` also creates `dist/worker.mjs`, which `npm run worker` executes.
+`npm run build` also creates `dist/worker.cjs`, which `npm run worker` executes.
 `worker:dev` reads `.env.local` itself (via Node's `--env-file-if-exists`) for
 `ANTHROPIC_API_KEY`/`DATABASE_URL` — unlike `next dev`, a plain Node/tsx
 process doesn't auto-load `.env.local`, so without this flag the worker

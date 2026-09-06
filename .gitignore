@@ -42,3 +42,6 @@ next-env.d.ts
 /data/
 /browser-profile/
 /uploads/
+
+# local design scratch, not part of the app
+/mocks/
