@@ -988,7 +988,7 @@ function EvidenceTab({
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-[-0.03em]">Comparable sales</h2>
           <p className="text-sm tabular-nums text-muted-foreground">
-            Fair value ${evidence.fairValue}
+            Fair value £{evidence.fairValue}
           </p>
         </div>
         <p className="mt-1.5 text-sm text-muted-foreground">{evidence.note}</p>
@@ -996,7 +996,7 @@ function EvidenceTab({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Listing</TableHead>
+                <TableHead className="w-full min-w-[220px]">Listing</TableHead>
                 <TableHead>Match</TableHead>
                 <TableHead>Sold</TableHead>
                 <TableHead className="text-right">Price</TableHead>
@@ -1008,12 +1008,17 @@ function EvidenceTab({
                   key={sale.title}
                   className={cn(sale.excluded && 'text-muted-foreground')}
                 >
-                  <TableCell className={cn(sale.excluded && 'line-through')}>
+                  <TableCell
+                    className={cn(
+                      'whitespace-normal break-words',
+                      sale.excluded && 'line-through',
+                    )}
+                  >
                     {sale.title}
                   </TableCell>
-                  <TableCell className="text-xs">{sale.match}</TableCell>
+                  <TableCell className="whitespace-normal text-xs">{sale.match}</TableCell>
                   <TableCell className="text-xs tabular-nums">{sale.soldAt}</TableCell>
-                  <TableCell className="text-right tabular-nums">${sale.price}</TableCell>
+                  <TableCell className="text-right tabular-nums">£{sale.price}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
