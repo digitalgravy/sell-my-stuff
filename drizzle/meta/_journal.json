@@ -43,6 +43,13 @@
       "when": 1788728748139,
       "tag": "0005_stiff_venus",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788738359602,
+      "tag": "0006_bright_stark_industries",
+      "breakpoints": true
     }
   ]
 }

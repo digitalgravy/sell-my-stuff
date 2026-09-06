@@ -24,3 +24,25 @@ export async function POST(
     return Response.json({ error: 'Could not import this capture' }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string; captureId: string }> },
+) {
+  if (!isTrustedRequestOrigin(request)) {
+    return Response.json({ error: 'Untrusted request origin' }, { status: 403 });
+  }
+
+  const { id, captureId } = await params;
+
+  try {
+    const outcome = await new PostgresCaptureInboxRepository().undoImport(captureId, id);
+    if (!outcome.ok) {
+      return Response.json({ error: outcome.reason }, { status: 400 });
+    }
+    return Response.json({ ok: true });
+  } catch (error) {
+    console.error('Failed to undo a capture import', error instanceof Error ? error.name : 'UnknownError');
+    return Response.json({ error: 'Could not undo this import' }, { status: 500 });
+  }
+}

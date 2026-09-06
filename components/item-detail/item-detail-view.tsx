@@ -119,6 +119,7 @@ export function ItemDetailView({
   const [activeTab, setActiveTab] = useState('overview');
   const [correcting, setCorrecting] = useState<Correcting | null>(null);
   const [draftValue, setDraftValue] = useState('');
+  const [undoingCaptureId, setUndoingCaptureId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,6 +177,24 @@ export function ItemDetailView({
       .catch(() => setStatus('error'))
       .finally(() => setRetrying(false));
   }, [apiBase]);
+
+  const undoImport = useCallback(
+    (captureId: string) => {
+      setUndoingCaptureId(captureId);
+      fetch(`${apiBase}/research/captures/${captureId}/import`, { method: 'DELETE' })
+        .then((response) => {
+          if (!response.ok) throw new Error();
+          return requestItemDetail(apiBase);
+        })
+        .then((data) => {
+          setDetail(data);
+          setStatus('ready');
+        })
+        .catch(() => undefined)
+        .finally(() => setUndoingCaptureId(null));
+    },
+    [apiBase],
+  );
 
   const confirmDelete = useCallback(() => {
     setDeleting(true);
@@ -387,7 +406,12 @@ export function ItemDetailView({
                     </p>
                   </div>
                   <div className="mt-5">
-                    <BuildLog steps={detail.buildSteps} />
+                    <BuildLog
+                      steps={detail.buildSteps}
+                      readOnly={readOnly}
+                      undoingCaptureId={undoingCaptureId}
+                      onUndoImport={undoImport}
+                    />
                   </div>
                 </section>
               </TabsContent>

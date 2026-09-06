@@ -34,6 +34,8 @@ export interface BuildStep {
   durationMs: number;
   blocks: BuildStepBlock[];
   artifacts?: string[];
+  /** Present only on steps that can be reversed (e.g. a comparable-sales import) -- lets the UI offer an Undo control. */
+  undo?: { captureId: string };
 }
 
 export type PhaseState = 'done' | 'pending' | 'not_started';

@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto';
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
-import { comparableSales, identificationRuns, itemFacts, items, jobs, photos } from '@/db/schema';
+import {
+  comparableSales,
+  identificationRuns,
+  itemFacts,
+  items,
+  jobs,
+  photos,
+  researchCaptures,
+} from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 
@@ -17,7 +25,12 @@ import type {
   ItemDetailRepository,
   RetryOutcome,
 } from './item-detail-repository';
-import { buildStepsFromRuns, deriveAttention, derivePhases } from './item-detail-view-model';
+import {
+  buildStepsFromImports,
+  buildStepsFromRuns,
+  deriveAttention,
+  derivePhases,
+} from './item-detail-view-model';
 
 const IDENTITY_FACT_FIELDS = new Set([
   'identity.item_type',
@@ -43,7 +56,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       .where(eq(items.id, itemId));
     if (!item) return null;
 
-    const [photoRows, factRows, runRows, [job], comparableSaleRows] = await Promise.all([
+    const [photoRows, factRows, runRows, [job], comparableSaleRows, importRows] = await Promise.all([
       database
         .select({ id: photos.id, position: photos.position })
         .from(photos)
@@ -95,6 +108,17 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .from(comparableSales)
         .where(eq(comparableSales.itemId, itemId))
         .orderBy(desc(comparableSales.soldAt)),
+      database
+        .select({
+          id: researchCaptures.id,
+          sourceUrl: researchCaptures.sourceUrl,
+          pageTitle: researchCaptures.pageTitle,
+          extractedSales: researchCaptures.extractedSales,
+          importedAt: researchCaptures.importedAt,
+        })
+        .from(researchCaptures)
+        .where(eq(researchCaptures.importedIntoItemId, itemId))
+        .orderBy(desc(researchCaptures.importedAt)),
     ]);
 
     const facts: ItemDetailFact[] = factRows.map((row) => ({
@@ -118,6 +142,46 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       position: row.position,
     }));
 
+    // Two independent sources of build-log entries (identification runs,
+    // comparable-sales imports) merged into one chronological list --
+    // each timestamped record keeps the source it came from so the right
+    // builder function turns it into a BuildStep.
+    const timestampedSteps = [
+      ...runRows.map((row) => ({ at: row.startedAt, kind: 'run' as const, row })),
+      ...importRows.map((row) => ({ at: row.importedAt!, kind: 'import' as const, row })),
+    ].sort((a, b) => b.at.getTime() - a.at.getTime());
+
+    const buildSteps = timestampedSteps.flatMap(({ kind, row }) =>
+      kind === 'run'
+        ? buildStepsFromRuns(
+            [
+              {
+                id: row.id,
+                attempt: row.attempt,
+                provider: row.provider,
+                model: row.model,
+                outcome: row.outcome,
+                inputTokens: row.inputTokens ?? undefined,
+                outputTokens: row.outputTokens ?? undefined,
+                response: row.response ?? undefined,
+                errorMessage: row.errorMessage ?? undefined,
+                startedAt: row.startedAt.toISOString(),
+                completedAt: row.completedAt.toISOString(),
+              },
+            ],
+            photoRows.length,
+          )
+        : buildStepsFromImports([
+            {
+              captureId: row.id,
+              sourceUrl: row.sourceUrl,
+              pageTitle: row.pageTitle,
+              importedCount: Array.isArray(row.extractedSales) ? row.extractedSales.length : 0,
+              importedAt: row.importedAt!.toISOString(),
+            },
+          ]),
+    );
+
     return {
       id: item.id,
       status: item.status,
@@ -136,22 +200,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         lastError: job?.lastError ?? undefined,
       }),
       evidence: comparableSaleRows.length > 0 ? buildEvidence(comparableSaleRows) : undefined,
-      buildSteps: buildStepsFromRuns(
-        runRows.map((row) => ({
-          id: row.id,
-          attempt: row.attempt,
-          provider: row.provider,
-          model: row.model,
-          outcome: row.outcome,
-          inputTokens: row.inputTokens ?? undefined,
-          outputTokens: row.outputTokens ?? undefined,
-          response: row.response ?? undefined,
-          errorMessage: row.errorMessage ?? undefined,
-          startedAt: row.startedAt.toISOString(),
-          completedAt: row.completedAt.toISOString(),
-        })),
-        photoRows.length,
-      ),
+      buildSteps,
     };
   }
 

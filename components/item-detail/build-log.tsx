@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { BuildStep, BuildStepType } from '@/server/items/item-detail-repository';
 
@@ -9,7 +10,17 @@ const TYPE_BADGE: Record<BuildStepType, { label: string; className: string }> = 
   policy: { label: 'POLICY', className: 'bg-success-soft text-success' },
 };
 
-export function BuildLog({ steps }: { steps: BuildStep[] }) {
+export function BuildLog({
+  steps,
+  readOnly,
+  undoingCaptureId,
+  onUndoImport,
+}: {
+  steps: BuildStep[];
+  readOnly?: boolean;
+  undoingCaptureId?: string | null;
+  onUndoImport?: (captureId: string) => void;
+}) {
   if (steps.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -21,13 +32,32 @@ export function BuildLog({ steps }: { steps: BuildStep[] }) {
   return (
     <div className="space-y-3">
       {steps.map((step, index) => (
-        <BuildStepEntry key={step.id} step={step} index={index} />
+        <BuildStepEntry
+          key={step.id}
+          step={step}
+          index={index}
+          readOnly={readOnly}
+          undoing={undoingCaptureId === step.undo?.captureId}
+          onUndoImport={onUndoImport}
+        />
       ))}
     </div>
   );
 }
 
-function BuildStepEntry({ step, index }: { step: BuildStep; index: number }) {
+function BuildStepEntry({
+  step,
+  index,
+  readOnly,
+  undoing,
+  onUndoImport,
+}: {
+  step: BuildStep;
+  index: number;
+  readOnly?: boolean;
+  undoing?: boolean;
+  onUndoImport?: (captureId: string) => void;
+}) {
   const badge = TYPE_BADGE[step.type];
   return (
     <details className="group rounded-2xl border border-border/60 px-5 py-4 open:bg-muted/40">
@@ -74,6 +104,16 @@ function BuildStepEntry({ step, index }: { step: BuildStep; index: number }) {
             <p className="text-muted-foreground">
               Artifacts: {step.artifacts.join(', ')}
             </p>
+          ) : null}
+          {step.undo && !readOnly ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={undoing}
+              onClick={() => onUndoImport?.(step.undo!.captureId)}
+            >
+              {undoing ? 'Undoing…' : 'Undo import'}
+            </Button>
           ) : null}
         </div>
       </div>

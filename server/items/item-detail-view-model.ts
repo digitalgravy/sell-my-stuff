@@ -168,6 +168,39 @@ export function buildStepsFromRuns(
   });
 }
 
+export interface ImportForBuildStep {
+  captureId: string;
+  sourceUrl: string | null;
+  pageTitle: string | null;
+  importedCount: number;
+  importedAt: string;
+}
+
+/**
+ * One build step per comparable-sales import onto this item. Undoable
+ * (the `undo` field), unlike identification runs -- importing is a single
+ * reversible write (delete the rows it added, re-open the capture), while
+ * a vision-model turn has nothing sensible to revert.
+ */
+export function buildStepsFromImports(imports: ImportForBuildStep[]): BuildStep[] {
+  return imports.map((imp) => ({
+    id: `import:${imp.captureId}`,
+    stage: 'Import comparable sales',
+    detail: `Imported ${imp.importedCount} comparable sale${imp.importedCount === 1 ? '' : 's'} from a captured eBay page`,
+    type: 'tool',
+    outcome: 'succeeded',
+    durationMs: 0,
+    blocks: [
+      {
+        label: imp.pageTitle ?? 'Captured eBay page',
+        meta: imp.sourceUrl ?? undefined,
+        content: imp.sourceUrl ?? 'No source URL was recorded for this capture.',
+      },
+    ],
+    undo: { captureId: imp.captureId },
+  }));
+}
+
 function countCandidates(response: unknown): number {
   if (
     response !== null &&

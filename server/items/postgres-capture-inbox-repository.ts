@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { comparableSales, items, researchCaptures } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
@@ -11,6 +11,7 @@ import type {
   ImportCaptureOutcome,
   PendingCapture,
   SaveCaptureResult,
+  UndoImportOutcome,
 } from './capture-inbox-repository';
 import type { ComparableSale } from './item-detail-repository';
 
@@ -42,6 +43,7 @@ export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
         extractedSales: researchCaptures.extractedSales,
       })
       .from(researchCaptures)
+      .where(isNull(researchCaptures.importedIntoItemId))
       .orderBy(desc(researchCaptures.createdAt));
 
     return rows.map((row) => ({
@@ -60,10 +62,16 @@ export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
     if (!item) return { ok: false, reason: 'Item not found' };
 
     const [capture] = await database
-      .select({ extractedSales: researchCaptures.extractedSales })
+      .select({
+        extractedSales: researchCaptures.extractedSales,
+        importedIntoItemId: researchCaptures.importedIntoItemId,
+      })
       .from(researchCaptures)
       .where(eq(researchCaptures.id, captureId));
     if (!capture) return { ok: false, reason: 'Capture not found' };
+    if (capture.importedIntoItemId) {
+      return { ok: false, reason: 'This capture was already imported' };
+    }
 
     const sales = Array.isArray(capture.extractedSales)
       ? (capture.extractedSales as ComparableSale[])
@@ -81,12 +89,45 @@ export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
           match: sale.match,
           soldAt: sale.soldAt,
           price: sale.price,
+          sourceCaptureId: captureId,
         })),
       );
-      await tx.delete(researchCaptures).where(eq(researchCaptures.id, captureId));
+      // The row (and its raw html) is kept, not deleted, so undoImport can
+      // put it back in the pending inbox exactly as it was.
+      await tx
+        .update(researchCaptures)
+        .set({ importedAt: new Date(), importedIntoItemId: itemId })
+        .where(eq(researchCaptures.id, captureId));
     });
 
     return { ok: true, imported: sales.length };
+  }
+
+  async undoImport(captureId: string, itemId: string): Promise<UndoImportOutcome> {
+    const database = getDatabase();
+
+    const [capture] = await database
+      .select({ importedIntoItemId: researchCaptures.importedIntoItemId })
+      .from(researchCaptures)
+      .where(eq(researchCaptures.id, captureId));
+    if (!capture) return { ok: false, reason: 'Capture not found' };
+    if (capture.importedIntoItemId !== itemId) {
+      return { ok: false, reason: 'This capture was not imported onto this item' };
+    }
+
+    await database.transaction(async (tx) => {
+      await tx
+        .delete(comparableSales)
+        .where(
+          and(eq(comparableSales.sourceCaptureId, captureId), eq(comparableSales.itemId, itemId)),
+        );
+      await tx
+        .update(researchCaptures)
+        .set({ importedAt: null, importedIntoItemId: null })
+        .where(eq(researchCaptures.id, captureId));
+    });
+
+    return { ok: true };
   }
 
   async deleteCapture(captureId: string): Promise<{ ok: boolean }> {

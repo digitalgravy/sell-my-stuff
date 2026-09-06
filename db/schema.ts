@@ -178,6 +178,14 @@ export const researchCaptures = pgTable('research_captures', {
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
+  // Set together on import, cleared together on undo -- a capture with
+  // importedIntoItemId set is excluded from the pending-captures inbox,
+  // but (unlike the old delete-on-import behaviour) its row and raw html
+  // survive so undo can restore it to pending rather than losing it.
+  importedAt: timestamp('imported_at', { withTimezone: true }),
+  importedIntoItemId: uuid('imported_into_item_id').references(() => items.id, {
+    onDelete: 'set null',
+  }),
 });
 
 /** One row per comparable sale imported onto an item -- see ComparableSale in server/items/item-detail-repository.ts. */
@@ -196,6 +204,12 @@ export const comparableSales = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Which capture this row came from, so an accidental import can be
+    // undone by deleting exactly the rows it added -- null for rows added
+    // any other way in the future.
+    sourceCaptureId: uuid('source_capture_id').references(() => researchCaptures.id, {
+      onDelete: 'set null',
+    }),
   },
   (table) => [index('comparable_sales_item_idx').on(table.itemId)],
 );
