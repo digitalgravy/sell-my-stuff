@@ -36,6 +36,13 @@
       "when": 1788536542288,
       "tag": "0004_orange_blonde_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788728748139,
+      "tag": "0005_stiff_venus",
+      "breakpoints": true
     }
   ]
 }

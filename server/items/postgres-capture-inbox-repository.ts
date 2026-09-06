@@ -1,0 +1,100 @@
+import { randomUUID } from 'node:crypto';
+
+import { desc, eq } from 'drizzle-orm';
+
+import { comparableSales, items, researchCaptures } from '@/db/schema';
+import { getDatabase } from '@/server/db/client';
+import { extractComparableSalesFromHtml, extractPageTitle } from '@/server/research/sold-listings-html';
+
+import type {
+  CaptureInboxRepository,
+  ImportCaptureOutcome,
+  PendingCapture,
+  SaveCaptureResult,
+} from './capture-inbox-repository';
+import type { ComparableSale } from './item-detail-repository';
+
+export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
+  async saveCapture(html: string, sourceUrl: string | null): Promise<SaveCaptureResult> {
+    const database = getDatabase();
+    const extractedSales = extractComparableSalesFromHtml(html);
+    const id = randomUUID();
+
+    await database.insert(researchCaptures).values({
+      id,
+      sourceUrl,
+      pageTitle: extractPageTitle(html) ?? null,
+      html,
+      extractedSales,
+    });
+
+    return { id, extractedCount: extractedSales.length };
+  }
+
+  async listPendingCaptures(): Promise<PendingCapture[]> {
+    const database = getDatabase();
+    const rows = await database
+      .select({
+        id: researchCaptures.id,
+        sourceUrl: researchCaptures.sourceUrl,
+        pageTitle: researchCaptures.pageTitle,
+        createdAt: researchCaptures.createdAt,
+        extractedSales: researchCaptures.extractedSales,
+      })
+      .from(researchCaptures)
+      .orderBy(desc(researchCaptures.createdAt));
+
+    return rows.map((row) => ({
+      id: row.id,
+      sourceUrl: row.sourceUrl,
+      pageTitle: row.pageTitle,
+      createdAt: row.createdAt.toISOString(),
+      extractedCount: Array.isArray(row.extractedSales) ? row.extractedSales.length : 0,
+    }));
+  }
+
+  async importCapture(captureId: string, itemId: string): Promise<ImportCaptureOutcome> {
+    const database = getDatabase();
+
+    const [item] = await database.select({ id: items.id }).from(items).where(eq(items.id, itemId));
+    if (!item) return { ok: false, reason: 'Item not found' };
+
+    const [capture] = await database
+      .select({ extractedSales: researchCaptures.extractedSales })
+      .from(researchCaptures)
+      .where(eq(researchCaptures.id, captureId));
+    if (!capture) return { ok: false, reason: 'Capture not found' };
+
+    const sales = Array.isArray(capture.extractedSales)
+      ? (capture.extractedSales as ComparableSale[])
+      : [];
+    if (sales.length === 0) {
+      return { ok: false, reason: 'No comparable sales were extracted from this capture' };
+    }
+
+    await database.transaction(async (tx) => {
+      await tx.insert(comparableSales).values(
+        sales.map((sale) => ({
+          id: randomUUID(),
+          itemId,
+          title: sale.title,
+          match: sale.match,
+          soldAt: sale.soldAt,
+          price: sale.price,
+        })),
+      );
+      await tx.delete(researchCaptures).where(eq(researchCaptures.id, captureId));
+    });
+
+    return { ok: true, imported: sales.length };
+  }
+
+  async deleteCapture(captureId: string): Promise<{ ok: boolean }> {
+    const database = getDatabase();
+    const result = await database
+      .delete(researchCaptures)
+      .where(eq(researchCaptures.id, captureId))
+      .returning({ id: researchCaptures.id });
+    return { ok: result.length > 0 };
+  }
+}

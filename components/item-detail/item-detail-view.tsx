@@ -371,7 +371,7 @@ export function ItemDetailView({
                 <ListingTab detail={detail} />
               </TabsContent>
               <TabsContent value="evidence" className="mt-6">
-                <EvidenceTab detail={detail} />
+                <EvidenceTab detail={detail} itemId={itemId} readOnly={readOnly} onImported={reload} />
               </TabsContent>
               <TabsContent value="build-log" className="mt-6">
                 <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
@@ -952,56 +952,192 @@ function ListingTab({ detail }: { detail: ItemDetail }) {
   );
 }
 
-function EvidenceTab({ detail }: { detail: ItemDetail }) {
+function EvidenceTab({
+  detail,
+  itemId,
+  readOnly,
+  onImported,
+}: {
+  detail: ItemDetail;
+  itemId: string;
+  readOnly: boolean;
+  onImported: () => void;
+}) {
   if (!detail.evidence) {
     return (
-      <section className="rounded-[1.75rem] border border-dashed border-border/75 bg-muted/30 p-6 text-sm text-muted-foreground sm:p-8">
-        <p className="font-medium text-foreground">Comparable-sales research not built yet</p>
-        <p className="mt-2">
-          Once a research stage exists, the comparable sold listings behind the suggested
-          price will show here.
-        </p>
-      </section>
+      <div className="space-y-5">
+        <section className="rounded-[1.75rem] border border-dashed border-border/75 bg-muted/30 p-6 text-sm text-muted-foreground sm:p-8">
+          <p className="font-medium text-foreground">Comparable-sales research not built yet</p>
+          <p className="mt-2">
+            Import a captured eBay search page below, or use the{' '}
+            <Link href="/tools/capture" className="underline underline-offset-2">
+              capture bookmarklet
+            </Link>{' '}
+            to save one.
+          </p>
+        </section>
+        <CaptureImportPanel itemId={itemId} readOnly={readOnly} onImported={onImported} />
+      </div>
     );
   }
 
   const { evidence } = detail;
   return (
-    <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-lg font-semibold tracking-[-0.03em]">Comparable sales</h2>
-        <p className="text-sm tabular-nums text-muted-foreground">
-          Fair value ${evidence.fairValue}
-        </p>
-      </div>
-      <p className="mt-1.5 text-sm text-muted-foreground">{evidence.note}</p>
-      <div className="mt-5 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Listing</TableHead>
-              <TableHead>Match</TableHead>
-              <TableHead>Sold</TableHead>
-              <TableHead className="text-right">Price</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {evidence.sales.map((sale) => (
-              <TableRow
-                key={sale.title}
-                className={cn(sale.excluded && 'text-muted-foreground')}
-              >
-                <TableCell className={cn(sale.excluded && 'line-through')}>
-                  {sale.title}
-                </TableCell>
-                <TableCell className="text-xs">{sale.match}</TableCell>
-                <TableCell className="text-xs tabular-nums">{sale.soldAt}</TableCell>
-                <TableCell className="text-right tabular-nums">${sale.price}</TableCell>
+    <div className="space-y-5">
+      <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-lg font-semibold tracking-[-0.03em]">Comparable sales</h2>
+          <p className="text-sm tabular-nums text-muted-foreground">
+            Fair value ${evidence.fairValue}
+          </p>
+        </div>
+        <p className="mt-1.5 text-sm text-muted-foreground">{evidence.note}</p>
+        <div className="mt-5 overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Listing</TableHead>
+                <TableHead>Match</TableHead>
+                <TableHead>Sold</TableHead>
+                <TableHead className="text-right">Price</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {evidence.sales.map((sale) => (
+                <TableRow
+                  key={sale.title}
+                  className={cn(sale.excluded && 'text-muted-foreground')}
+                >
+                  <TableCell className={cn(sale.excluded && 'line-through')}>
+                    {sale.title}
+                  </TableCell>
+                  <TableCell className="text-xs">{sale.match}</TableCell>
+                  <TableCell className="text-xs tabular-nums">{sale.soldAt}</TableCell>
+                  <TableCell className="text-right tabular-nums">${sale.price}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </section>
+      <CaptureImportPanel itemId={itemId} readOnly={readOnly} onImported={onImported} />
+    </div>
+  );
+}
+
+interface PendingCapture {
+  id: string;
+  sourceUrl: string | null;
+  pageTitle: string | null;
+  createdAt: string;
+  extractedCount: number;
+}
+
+function CaptureImportPanel({
+  itemId,
+  readOnly,
+  onImported,
+}: {
+  itemId: string;
+  readOnly: boolean;
+  onImported: () => void;
+}) {
+  const [captures, setCaptures] = useState<PendingCapture[] | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const loadCaptures = useCallback(() => {
+    fetch('/api/research/captures')
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error())))
+      .then((data: { captures: PendingCapture[] }) => setCaptures(data.captures))
+      .catch(() => setCaptures([]));
+  }, []);
+
+  useEffect(() => {
+    loadCaptures();
+  }, [loadCaptures]);
+
+  const importCapture = useCallback(
+    (captureId: string) => {
+      setBusyId(captureId);
+      fetch(`/api/items/${itemId}/research/captures/${captureId}/import`, { method: 'POST' })
+        .then((response) => {
+          if (!response.ok) throw new Error();
+          loadCaptures();
+          onImported();
+        })
+        .catch(() => undefined)
+        .finally(() => setBusyId(null));
+    },
+    [itemId, loadCaptures, onImported],
+  );
+
+  const discardCapture = useCallback(
+    (captureId: string) => {
+      setBusyId(captureId);
+      fetch(`/api/research/captures/${captureId}`, { method: 'DELETE' })
+        .then(() => loadCaptures())
+        .catch(() => undefined)
+        .finally(() => setBusyId(null));
+    },
+    [loadCaptures],
+  );
+
+  if (readOnly || captures === null) return null;
+
+  return (
+    <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
+      <h3 className="text-sm font-semibold tracking-[-0.02em]">Pending captured pages</h3>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Captured with the bookmarklet from your own browser — pick one to import its comparable
+        sales onto this item.
+      </p>
+      {captures.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          Nothing waiting yet — use the{' '}
+          <Link href="/tools/capture" className="underline underline-offset-2">
+            capture bookmarklet
+          </Link>{' '}
+          on an eBay search page, then come back here.
+        </p>
+      ) : (
+        <ul className="mt-4 space-y-3">
+          {captures.map((capture) => (
+            <li
+              key={capture.id}
+              className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 p-3 sm:p-4"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-foreground">
+                  {capture.pageTitle ?? capture.sourceUrl ?? 'Captured page'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {relativeTime(capture.createdAt)} ·{' '}
+                  {capture.extractedCount === 0
+                    ? 'no sales found'
+                    : `${capture.extractedCount} sale${capture.extractedCount === 1 ? '' : 's'} found`}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busyId === capture.id}
+                  onClick={() => discardCapture(capture.id)}
+                >
+                  Discard
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={busyId === capture.id || capture.extractedCount === 0}
+                  onClick={() => importCapture(capture.id)}
+                >
+                  Import
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

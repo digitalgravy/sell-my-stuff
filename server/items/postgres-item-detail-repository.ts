@@ -2,13 +2,15 @@ import { randomUUID } from 'node:crypto';
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
-import { identificationRuns, itemFacts, items, jobs, photos } from '@/db/schema';
+import { comparableSales, identificationRuns, itemFacts, items, jobs, photos } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 
 import { deriveActivityState } from './homepage-snapshot';
 import type {
+  ComparableSale,
   CorrectFactOutcome,
+  EvidenceInfo,
   ItemDetail,
   ItemDetailFact,
   ItemDetailPhoto,
@@ -41,7 +43,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       .where(eq(items.id, itemId));
     if (!item) return null;
 
-    const [photoRows, factRows, runRows, [job]] = await Promise.all([
+    const [photoRows, factRows, runRows, [job], comparableSaleRows] = await Promise.all([
       database
         .select({ id: photos.id, position: photos.position })
         .from(photos)
@@ -82,6 +84,17 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .where(and(eq(jobs.itemId, itemId), eq(jobs.type, INSPECT_IMAGES_JOB_TYPE)))
         .orderBy(desc(jobs.updatedAt))
         .limit(1),
+      database
+        .select({
+          title: comparableSales.title,
+          match: comparableSales.match,
+          soldAt: comparableSales.soldAt,
+          price: comparableSales.price,
+          excluded: comparableSales.excluded,
+        })
+        .from(comparableSales)
+        .where(eq(comparableSales.itemId, itemId))
+        .orderBy(desc(comparableSales.soldAt)),
     ]);
 
     const facts: ItemDetailFact[] = factRows.map((row) => ({
@@ -122,6 +135,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         openQuestions,
         lastError: job?.lastError ?? undefined,
       }),
+      evidence: comparableSaleRows.length > 0 ? buildEvidence(comparableSaleRows) : undefined,
       buildSteps: buildStepsFromRuns(
         runRows.map((row) => ({
           id: row.id,
@@ -240,6 +254,19 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       .returning({ id: items.id });
     return { ok: result.length > 0 };
   }
+}
+
+function buildEvidence(rows: readonly ComparableSale[]): EvidenceInfo {
+  const included = rows.filter((row) => !row.excluded);
+  const fairValue =
+    included.length > 0
+      ? Math.round((included.reduce((sum, row) => sum + row.price, 0) / included.length) * 100) / 100
+      : 0;
+  return {
+    sales: rows.map((row) => ({ ...row })),
+    fairValue,
+    note: `Based on ${included.length} comparable sale${included.length === 1 ? '' : 's'} imported from a captured eBay search page.`,
+  };
 }
 
 function parseFactValue(rawValue: string): unknown {

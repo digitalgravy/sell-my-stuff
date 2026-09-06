@@ -23,6 +23,7 @@
     "@anthropic-ai/sdk": "0.123.0",
     "@base-ui/react": "1.7.0",
     "@shadcn/react": "0.3.0",
+    "cheerio": "^1.2.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",

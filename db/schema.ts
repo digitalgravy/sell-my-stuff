@@ -159,6 +159,48 @@ export const itemFacts = pgTable(
 );
 
 /**
+ * A raw eBay results page, captured by the bookmarklet (see
+ * app/tools/capture) from the user's own real desktop browser rather
+ * than the automated sell-browser service -- eBay's own anti-bot
+ * detection treats a Playwright-controlled browser differently from a
+ * genuine one even under identical, human-driven actions (confirmed
+ * live 2026-09-06), so this is the reliable path for comparable-sale
+ * research. extractedSales is computed once at capture time (not
+ * re-parsed on every list view) and consumed -- the row is deleted --
+ * once successfully imported onto an item via comparable_sales.
+ */
+export const researchCaptures = pgTable('research_captures', {
+  id: uuid('id').primaryKey(),
+  sourceUrl: text('source_url'),
+  pageTitle: text('page_title'),
+  html: text('html').notNull(),
+  extractedSales: jsonb('extracted_sales').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** One row per comparable sale imported onto an item -- see ComparableSale in server/items/item-detail-repository.ts. */
+export const comparableSales = pgTable(
+  'comparable_sales',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    match: text('match').notNull(),
+    soldAt: text('sold_at').notNull(),
+    price: real('price').notNull(),
+    excluded: boolean('excluded').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index('comparable_sales_item_idx').on(table.itemId)],
+);
+
+/**
  * One row per inspect_images attempt (a "build log" for identification
  * runs) -- unlike item_facts, which keeps only the current derived value
  * per field, this records the full raw model response (every candidate,
