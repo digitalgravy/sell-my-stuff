@@ -16,6 +16,10 @@ container:
     DATABASE_NAME: sell_my_stuff
     DATABASE_USER: postgres
     DATABASE_PASSWORD: ${secret:DATABASE_PASSWORD}
+    # Authenticates the capture bookmarklet's cross-origin POST (it
+    # runs injected into whatever page the user is on, so it can't use
+    # the same-origin check every other mutating route uses).
+    CAPTURE_INBOX_TOKEN: ${secret:CAPTURE_INBOX_TOKEN}
 
 network:
   hostname: sell
