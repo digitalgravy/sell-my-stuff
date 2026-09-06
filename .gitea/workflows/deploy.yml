@@ -6,7 +6,7 @@ on:
 
 env:
   IMAGE_REPOSITORY: gitea.internal:3000/overseer-bot/sell-my-stuff
-  OVERSEER_CLI_IMAGE: gitea.internal:3000/overseer-bot/overseer-core:latest
+  OVERSEER_BASE_URL: https://overseer.26fe.uk
 
 jobs:
   build-test-propose:
@@ -30,18 +30,33 @@ jobs:
           echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login gitea.internal:3000 -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
           docker push "$IMAGE_REPOSITORY:${{ gitea.sha }}"
 
-      - name: Propose deploy through Overseer
+      # Calls Overseer's live POST /deploy endpoint directly, over the
+      # stable OVERSEER_BASE_URL hostname -- NOT the disposable local
+      # `overseer-core` container + local Docker volumes this step used
+      # to run against. That older approach genuinely succeeded at
+      # *a* propose-deploy call every time, which is exactly what made
+      # it so easy to miss: the disposable container has its own
+      # throwaway data store, structurally unable to reach the same
+      # store the live dashboard/MCP reads from, so no proposal from
+      # this workflow was ever actually visible anywhere real. Fixed
+      # for sell-browser earlier (2026-09-06); this repo's workflow
+      # just hadn't been updated to match yet.
+      - name: Propose deploy through Overseer (propose-only; never approves or executes)
         run: |
-          docker run --rm --pull always \
-            -v overseer-data:/app/data \
-            -v overseer-bootstrap:/run/overseer-bootstrap:ro \
-            -e IMAGE_REF="$IMAGE_REPOSITORY:${{ gitea.sha }}" \
-            -e DEPLOY_REASON="CI build ${{ gitea.sha }}" \
-            -e MANIFEST_B64="$(base64 < overseer-app.yaml | tr -d '\n')" \
-            "$OVERSEER_CLI_IMAGE" \
-            sh -c 'echo "$MANIFEST_B64" | base64 -d > /tmp/overseer-app.yaml && node --import tsx src/cli/index.ts propose-deploy /tmp/overseer-app.yaml \
-              --image "$IMAGE_REF" \
-              --portainer-adapter portainer-ci \
-              --unifi-adapter unifi-ci \
-              --npm-adapter nginx-proxy-manager-ci \
-              --reason "$DEPLOY_REASON"'
+          curl -sf -X POST "$OVERSEER_BASE_URL/deploy" \
+            -H "Authorization: Bearer ${{ secrets.OVERSEER_CI_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "$(node -e '
+              const fs = require("fs");
+              const manifest = fs.readFileSync("overseer-app.yaml", "utf8");
+              console.log(JSON.stringify({
+                manifest: Buffer.from(manifest).toString("base64"),
+                image: process.env.IMAGE_REPOSITORY + ":" + process.env.GITEA_SHA,
+                reason: "CI build " + process.env.GITEA_SHA,
+                portainerAdapter: "portainer-ci",
+                unifiAdapter: "unifi-ci",
+                nginxProxyManagerAdapter: "nginx-proxy-manager-ci",
+              }));
+            ')"
+        env:
+          GITEA_SHA: ${{ gitea.sha }}
