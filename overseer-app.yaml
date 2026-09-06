@@ -8,9 +8,25 @@ image:
 container:
   port: 3000
   healthCheckPath: /api/healthz
+  # Durable photo-upload storage, separate from the container's writable
+  # layer -- without this, uploaded photos are lost on every redeploy.
+  # Host path must exist and be owned by 1000:1000 (the `node` user the
+  # runtime image runs as) before this is deployed -- Docker will
+  # otherwise auto-create it as root and every upload will fail with a
+  # permission error. Same manifest field/convention as sell-browser's
+  # profile volume.
+  volumes:
+    - hostPath: /srv/sell-my-stuff/uploads
+      containerPath: /data/uploads
+      readOnly: false
   env:
     APP_ORIGIN: https://sell.26fe.uk
-    CAPTURE_API_ENABLED: 'false'
+    # Safe to enable now that Postgres is connected (f945117) and the
+    # durable upload volume above is provisioned -- previously left
+    # false because uploads would otherwise have lived only on the
+    # container's ephemeral writable layer.
+    CAPTURE_API_ENABLED: 'true'
+    SELL_STORAGE_PATH: /data/uploads
     DATABASE_HOST: docker.26fe.uk
     DATABASE_PORT: '5432'
     DATABASE_NAME: sell_my_stuff
