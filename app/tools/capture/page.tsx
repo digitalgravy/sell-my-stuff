@@ -1,5 +1,7 @@
 import { headers } from 'next/headers';
 
+import { BookmarkletLink } from './bookmarklet-link';
+
 // A bookmarklet's fetch() to /api/research/captures is genuinely
 // cross-origin (it runs injected into whatever page the user is on --
 // eBay, not this app), so it authenticates with CAPTURE_INBOX_TOKEN
@@ -35,12 +37,7 @@ export default async function CaptureToolsPage() {
         </p>
       ) : (
         <div className="mt-6 rounded-[1.75rem] border border-border/75 bg-card p-8 text-center">
-          <a
-            href={`javascript:${encodeURIComponent(bookmarkletSource)}`}
-            className="inline-flex items-center rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground"
-          >
-            Capture eBay page
-          </a>
+          <BookmarkletLink source={bookmarkletSource} />
           <p className="mt-3 text-xs text-muted-foreground">
             Drag, don&apos;t click — this only works once it&apos;s a real bookmark, clicked while
             on the page you want to capture.
