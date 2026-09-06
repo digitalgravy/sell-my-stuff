@@ -192,9 +192,23 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
         session state machine (`src/browser.ts`), plus two deterministic
         actions (`GET /browser/page`, `POST /browser/navigate`) —
         verified against the live deployed container, not just locally.
-  - [ ] First-login bootstrap through the noVNC human-takeover view. The
-        browser currently just idles on `about:blank`; nothing yet
-        navigates anywhere or changes session state on startup.
+  - [x] First-login bootstrap through the noVNC human-takeover view —
+        **completed for real, 2026-09-06.** noVNC published at
+        `sell-browser-vnc.26fe.uk` (`container.extraPorts`, LAN-only);
+        the project owner logged into their real eBay account through
+        it (clearing a real anti-bot `splashui/challenge` along the
+        way), and `resume-agent` verified the actual resulting page
+        (Seller Hub Product Research, Sold tab) before accepting
+        control back — not just trusted the human's say-so. The
+        persistent profile now holds a genuine authenticated eBay
+        session. Getting noVNC reachable surfaced three more real
+        gaps, all documented in `sell-browser`'s README "Deployment
+        notes": `extraPorts`' DNS/proxy-host creation is gated behind
+        the same `isFirstDeploy` check as plain redeploys (worked
+        around manually); a fresh NPM proxy host doesn't allow
+        WebSocket upgrades by default (broke the VNC connection until
+        fixed); a container redeploy resets the in-memory session
+        state to `IDLE` (expected, not a bug).
   - [ ] `EbayProductResearchBrowserProvider` (the `ComparableSalesProvider`
         port from `BRIEF.md`) against Seller Hub Product Research —
         confirmed accessible with the project owner's authenticated

@@ -352,18 +352,26 @@ possible future fallback. See ADR 0005/0008 for the design; that repo's own
 `README.md` "Status" section is the authoritative list of what's real vs.
 not yet built there — don't duplicate it here, it will drift.
 
-**Now genuinely deployed and live** at `sell-browser.26fe.uk` (port 3100 —
-3000 collides with this app on the same Docker host). What exists (commit
-`49a4109` there): the session-ownership state machine and its HTTP API, a
-Dockerfile that builds headed Chromium + Xvfb + x11vnc + noVNC, and — new
-as of this commit — a real persistent-context Chromium actually launched
-(`src/browser.ts`) and wired to two deterministic actions,
-`GET /browser/page` (read-only) and `POST /browser/navigate` (requires
-`AGENT_CONTROLLED`), verified against the live deployed container
-(`example.com` loaded for real, title read back, 409 correctly refused
-once control was released). Still not built: the first-login bootstrap
-flow, and anything eBay-specific — `POST /research/product-search` still
-returns `501`.
+**Deployed, live, and — as of 2026-09-06 — genuinely logged into eBay.**
+Live at `sell-browser.26fe.uk` (port 3100 — 3000 collides with this app
+on the same Docker host), with noVNC reachable at
+`sell-browser-vnc.26fe.uk` (LAN-only, `container.extraPorts`). What
+exists (commit `7a5fd9c` there): the session-ownership state machine and
+its HTTP API; a real persistent-context Chromium (`src/browser.ts`);
+`GET /browser/page`, `POST /browser/navigate`, `POST
+/session/request-login` (navigates to Seller Hub Product Research +
+pauses for a human) and `POST /session/resume-agent` (re-verifies the
+real page via `src/ebay.ts`'s `looksLoggedIn()` before handing control
+back — recognises both eBay's plain sign-in redirect and its
+`splashui/challenge` anti-bot interstitial). **First-login bootstrap is
+done for real**: the project owner logged into their actual eBay
+account through noVNC, `resume-agent` verified the real resulting page
+(Seller Hub Product Research, Sold tab) before accepting it, and the
+persistent profile now holds a genuine authenticated session. Still not
+built: anything that actually searches/extracts from Product Research —
+`POST /research/product-search` still returns `501`. That's the real
+next step, and the browser is now sitting exactly where it needs to be
+to start on it.
 
 Two unrelated real bugs found and fixed while building this, both worth
 remembering for anything else in this project's orbit:
@@ -407,22 +415,38 @@ independent, since-fixed issues, roughly in the order discovered:
   existing container and skip DNS/proxy-host creation entirely, with no
   error. Check both explicitly after any redeploy that followed a
   failed first attempt.
+- The same gap applies to `container.extraPorts`, not just first
+  deploys generally: adding a new `extraPorts` entry to an
+  already-existing container correctly updates its port bindings, but
+  silently never proposes the DNS record/proxy host for it (confirmed
+  with the Overseer maintainer, 2026-09-06) — worked around manually via
+  `propose_unifi_add_static_dns_record` +
+  `propose_nginx_proxy_manager_create_proxy_host`.
+- A freshly-created NPM proxy host doesn't allow WebSocket upgrades by
+  default, and the create-proxy-host tool has no parameter for it — broke
+  noVNC specifically ("Failed to connect to server" despite the static
+  page loading fine over plain HTTP) until
+  `propose_nginx_proxy_manager_update_proxy_host_settings` was used
+  afterward to set `allowWebsocketUpgrade: true`.
 
 Full detail on all of the above is in `sell-browser`'s own README
 ("Deployment notes") — this is the summary, not the authority.
 
 ## Exact next action
 
-1. Continue `sell-browser` (now deployed live at `sell-browser.26fe.uk`,
-   real Chromium running): build the first-login bootstrap flow through
-   noVNC (the profile is fresh — there's no eBay session yet, and
-   nothing currently transitions the session state or navigates
-   anywhere on startup), then `EbayProductResearchBrowserProvider`
-   against Seller Hub Product Research (confirmed accessible and the
-   strongest evidence source — see the research doc) built on top of
-   the now-real `POST /browser/navigate` action, then the
-   `research_comparable_sales` job type on this repo's side (reuses the
-   existing `jobs`-table claim/lease pattern, no new mechanism).
+1. Continue `sell-browser` — first-login bootstrap is done for real
+   (genuine authenticated eBay session in the persistent profile,
+   verified 2026-09-06). Build `EbayProductResearchBrowserProvider`:
+   navigate Seller Hub Product Research (already reachable — the
+   browser is currently sitting on it), search by keyword/model, and
+   extract comparable-sale rows into the `ComparableRecord` shape from
+   `BRIEF.md`, on top of the now-real `POST /browser/navigate` action.
+   Then the `research_comparable_sales` job type on this repo's side
+   (reuses the existing `jobs`-table claim/lease pattern, no new
+   mechanism), and finally wiring that provider into the real
+   `ItemDetailRepository`/`EvidenceInfo` so the item detail page's
+   Evidence tab shows real comparables instead of its current honest
+   "not built yet" state.
 2. Build the "answer the open question" action for `NEEDS_INFORMATION`
    items on the item detail page (writes a `user_confirmed`/`user_evidence`
    fact, re-queues research) — the one deliberately-deferred piece of the

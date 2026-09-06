@@ -10,14 +10,16 @@ This roadmap preserves completed history. Items move between sections as evidenc
       [ADR 0005](docs/adr/0005-browser-operator-security.md)/[0008](docs/adr/0008-browser-operator-deployment.md)).
   - [x] Scaffold the project, session-state machine and its HTTP API (tested), Dockerfile
         (Playwright + Xvfb + x11vnc + noVNC on Jupiter/Docker infrastructure).
-  - [ ] Launch a real persistent-context Chromium and wire it to the session state machine.
-  - [ ] First-login bootstrap through the noVNC human-takeover view.
+  - [x] Launch a real persistent-context Chromium and wire it to the session state machine.
+  - [x] First-login bootstrap through the noVNC human-takeover view — completed for real,
+        2026-09-06: a genuine authenticated eBay session now exists in the persistent profile,
+        verified by `resume-agent` re-checking the actual resulting page, not just trusted.
   - [ ] `EbayProductResearchBrowserProvider` (the `ComparableSalesProvider` port from `BRIEF.md`) —
         navigate Seller Hub Product Research, extract comparable sales into the `ComparableRecord` shape.
   - [ ] `research_comparable_sales` job type on the `sell-my-stuff` side, reusing the existing
         `jobs`-table claim/lease pattern, feeding the already-built Evidence tab.
-  - [ ] Provision the durable profile volume through Overseer (manifest field unconfirmed — resolve
-        alongside the still-open durable-upload-volume question below).
+  - [x] Provision the durable profile volume through Overseer (`container.volumes`,
+        `hostPath`/`containerPath`/`readOnly` — the same field `sell-my-stuff` itself uses).
 - [x] Define the PostgreSQL item/photo/job schema, migration and feature-gated upload contract.
 - [ ] Provision PostgreSQL and durable upload storage through Overseer, then enable and integration-test capture.
 - [ ] Establish mobile capture quality: multi-photo, HEIC, drag/drop, clipboard, retries and clear progress.
