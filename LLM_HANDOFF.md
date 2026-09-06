@@ -352,32 +352,77 @@ possible future fallback. See ADR 0005/0008 for the design; that repo's own
 `README.md` "Status" section is the authoritative list of what's real vs.
 not yet built there — don't duplicate it here, it will drift.
 
-What exists (commit `8ae5a9e` there): the session-ownership state machine
-and its HTTP API, fully tested, and a Dockerfile that builds a headed
-Chromium + Xvfb + x11vnc + noVNC image, verified to actually boot all four
-processes and respond correctly. Nothing about Playwright, the actual
-browser session, or eBay Product Research extraction exists yet.
+**Now genuinely deployed and live** at `sell-browser.26fe.uk` (port 3100 —
+3000 collides with this app on the same Docker host). What exists (commit
+`49a4109` there): the session-ownership state machine and its HTTP API, a
+Dockerfile that builds headed Chromium + Xvfb + x11vnc + noVNC, and — new
+as of this commit — a real persistent-context Chromium actually launched
+(`src/browser.ts`) and wired to two deterministic actions,
+`GET /browser/page` (read-only) and `POST /browser/navigate` (requires
+`AGENT_CONTROLLED`), verified against the live deployed container
+(`example.com` loaded for real, title read back, 409 correctly refused
+once control was released). Still not built: the first-login bootstrap
+flow, and anything eBay-specific — `POST /research/product-search` still
+returns `501`.
 
-Real bug found and fixed while building this: `tzdata` (pulled in by
-xvfb/x11vnc) prompts interactively for a timezone and silently hangs
-`apt-get install` with zero output in a non-interactive `docker build` —
-looked exactly like a slow base-image pull, wasn't. Fix is
-`ENV DEBIAN_FRONTEND=noninteractive` + a preset `TZ` before the `apt-get
-install` line. Worth remembering for any other Debian-based Dockerfile in
-this project's orbit.
+Two unrelated real bugs found and fixed while building this, both worth
+remembering for anything else in this project's orbit:
+
+1. `tzdata` (pulled in by xvfb/x11vnc) prompts interactively for a
+   timezone and silently hangs `apt-get install` with zero output in a
+   non-interactive `docker build` — looked exactly like a slow
+   base-image pull, wasn't. Fix: `ENV DEBIAN_FRONTEND=noninteractive` +
+   a preset `TZ` before the `apt-get install` line.
+2. A Dockerfile `ENTRYPOINT` that always launches the full app,
+   ignoring any command Docker was actually invoked with, makes
+   `docker run image npm test` (what CI's "run tests" step does) hang
+   forever launching the real server instead of running tests. Fix:
+   `if [ "$#" -gt 0 ]; then exec "$@"; fi` at the top of `entrypoint.sh`.
+
+**Overseer-side saga, 2026-09-05/06 (not this repo's bug, but blocked
+`sell-browser`'s first deploy for a long time and is worth knowing about
+if a future deploy of anything acts the same way):** `overseer-core` was
+migrated to a new host (`192.168.5.85`) mid-session. This surfaced three
+independent, since-fixed issues, roughly in the order discovered:
+- Stale local DNS cache for `overseer.internal` (a real UniFi record, TTL
+  60s, that had genuinely already updated — this one was just local
+  caching, not an Overseer bug).
+- CI's "propose deploy" step ran its own disposable `overseer-core`
+  container against local Docker volumes, structurally unable to ever
+  write to the same store the live dashboard/MCP clients read from —
+  fixed by changing CI to call the live `POST /deploy` HTTP endpoint
+  directly instead (content-based, no server-filesystem path needed).
+  `mcp__overseer__run_doctor_ci_check` now exists specifically to catch
+  a regression of this class automatically.
+- `portainer-ci`/`unifi-ci`/`nginx-proxy-manager-ci` are (correctly,
+  intentionally) propose-only — no adapter has ever been able to
+  execute a CI-originated proposal directly. Getting a real CI-proposed
+  deploy to actually run requires re-proposing the same manifest via the
+  `-mutable` adapters (a human, or a full-tier MCP client — not the
+  same tier CI or a remote agent normally holds), approving + executing
+  that, then rejecting the original `-ci` proposal as superseded. No
+  automation for this handoff exists yet.
+- A dangling never-started container from a failed first-deploy attempt
+  silently makes every subsequent `propose_deploy` treat it as an
+  existing container and skip DNS/proxy-host creation entirely, with no
+  error. Check both explicitly after any redeploy that followed a
+  failed first attempt.
+
+Full detail on all of the above is in `sell-browser`'s own README
+("Deployment notes") — this is the summary, not the authority.
 
 ## Exact next action
 
-1. Continue `sell-browser`: launch a real Playwright persistent-context
-   Chromium wired to the session state machine, then the first-login
-   bootstrap through noVNC, then `EbayProductResearchBrowserProvider`
+1. Continue `sell-browser` (now deployed live at `sell-browser.26fe.uk`,
+   real Chromium running): build the first-login bootstrap flow through
+   noVNC (the profile is fresh — there's no eBay session yet, and
+   nothing currently transitions the session state or navigates
+   anywhere on startup), then `EbayProductResearchBrowserProvider`
    against Seller Hub Product Research (confirmed accessible and the
-   strongest evidence source — see the research doc), then the
+   strongest evidence source — see the research doc) built on top of
+   the now-real `POST /browser/navigate` action, then the
    `research_comparable_sales` job type on this repo's side (reuses the
-   existing `jobs`-table claim/lease pattern, no new mechanism). Confirm
-   the real host path for its profile volume before that project's first
-   deploy is approved — `/srv/sell-browser/profile` in its
-   `overseer-app.yaml` is a placeholder.
+   existing `jobs`-table claim/lease pattern, no new mechanism).
 2. Build the "answer the open question" action for `NEEDS_INFORMATION`
    items on the item detail page (writes a `user_confirmed`/`user_evidence`
    fact, re-queues research) — the one deliberately-deferred piece of the
@@ -438,11 +483,12 @@ npm run db:migrate
 - eBay capability research and authenticated Seller Hub inspection are recorded
   in `docs/research/ebay-capabilities-2026-09-03.md`.
 - Seller Hub reported that account details need updating before listing again.
-- Browser Operator: skeleton exists (`sell-browser`, its own Overseer
+- Browser Operator: deployed and live (`sell-browser`, its own Overseer
   project — session-state machine, HTTP API, headed-Chromium Docker image,
-  all verified working locally) but no Playwright/browser-session code, no
-  authenticated profile, no research extraction yet — see "Browser
-  Operator (`sell-browser`), started 2026-09-05" above.
+  a real persistent-context Chromium and two working deterministic browser
+  actions, all verified against the live container) but no authenticated
+  eBay session, no first-login bootstrap, no research extraction yet —
+  see "Browser Operator (`sell-browser`), started 2026-09-05" above.
 - AI provider: first vision adapter implemented (Anthropic only, see above),
   unverified against the real API. Marketplace, carrier and packaging
   adapters: not implemented.

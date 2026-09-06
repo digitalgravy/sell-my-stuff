@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-09-05
+Last updated: 2026-09-06
 
 ## Current phase
 
@@ -167,7 +167,9 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
 - [ ] Milestone 2, Browser Operator: `sell-browser`, a separate Overseer
       project (`overseer-projects/sell-browser`, own repo/CI/manifest) —
       see ADR 0005/0008 for the design this implements. Started
-      2026-09-05.
+      2026-09-05. **Deployed and live** at `sell-browser.26fe.uk`
+      (port 3100 — 3000 collides with this app on the same Docker host)
+      since 2026-09-06.
   - [x] Session-ownership state machine (`IDLE`/`AGENT_CONTROLLED`/
         `WAITING_FOR_HUMAN`/`HUMAN_CONTROLLED`/`RECONCILING_AFTER_HUMAN`/
         `ERROR`) and its HTTP API, fully tested.
@@ -178,10 +180,21 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
         fixed a real bug in the process: `tzdata`'s interactive timezone
         prompt silently hung `apt-get install` with no output at all in
         a non-interactive build, misread at first as a slow image pull.
-  - [ ] Launch a real persistent-context Chromium and wire it to the
-        session state machine (currently `src/app.ts` has no Playwright
-        reference at all — the API only manages state).
-  - [ ] First-login bootstrap through the noVNC human-takeover view.
+  - [x] First real deploy, 2026-09-06 — a genuine multi-day debugging
+        arc (an `overseer-core` host migration mid-session broke DNS,
+        then CI's proposal transport, then surfaced a port collision
+        with this app, then the propose-only `-ci` adapter boundary);
+        full detail in `sell-browser`'s own README "Deployment notes"
+        and this file's `LLM_HANDOFF.md` counterpart. A genuinely useful
+        byproduct: `mcp__overseer__run_doctor_ci_check`, a new Overseer
+        capability that round-trip-verifies CI's deploy path end to end.
+  - [x] Launch a real persistent-context Chromium and wire it to the
+        session state machine (`src/browser.ts`), plus two deterministic
+        actions (`GET /browser/page`, `POST /browser/navigate`) —
+        verified against the live deployed container, not just locally.
+  - [ ] First-login bootstrap through the noVNC human-takeover view. The
+        browser currently just idles on `about:blank`; nothing yet
+        navigates anywhere or changes session state on startup.
   - [ ] `EbayProductResearchBrowserProvider` (the `ComparableSalesProvider`
         port from `BRIEF.md`) against Seller Hub Product Research —
         confirmed accessible with the project owner's authenticated
@@ -190,11 +203,6 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
   - [ ] `research_comparable_sales` job type here, reusing the existing
         `jobs`-table claim/lease pattern, feeding the already-built
         Evidence tab on the item detail page.
-  - [ ] Confirm the real host path for `sell-browser`'s
-        `overseer-app.yaml` `container.volumes` entry (currently a
-        placeholder, `/srv/sell-browser/profile`) before its first
-        deploy is approved — without it, login is lost on every
-        redeploy.
 
 ## Secrets access
 
