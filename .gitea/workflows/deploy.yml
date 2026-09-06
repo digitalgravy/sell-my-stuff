@@ -12,7 +12,15 @@ jobs:
   build-test-propose:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to an immutable patch tag, not the floating v4 major tag.
+      # The Gitea Actions runner's cached clone of v4 is corrupted
+      # ("Unable to pull refs/heads/v4: non-fast-forward update"),
+      # confirmed live on this same runner while debugging sell-browser
+      # (2026-09-06) -- every job referencing @v4 fails at this step,
+      # before reaching any project code. v4.2.2 is a specific release
+      # tag, never force-moved once published, so it caches under a
+      # distinct key unaffected by the broken v4 entry.
+      - uses: actions/checkout@v4.2.2
 
       - name: Build and run quality gates
         run: docker build -t "$IMAGE_REPOSITORY:${{ gitea.sha }}" .
