@@ -988,7 +988,7 @@ function EvidenceTab({
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-[-0.03em]">Comparable sales</h2>
           <p className="text-sm tabular-nums text-muted-foreground">
-            Fair value £{evidence.fairValue}
+            Fair value £{evidence.fairValue.toFixed(2)}
           </p>
         </div>
         <p className="mt-1.5 text-sm text-muted-foreground">{evidence.note}</p>
@@ -1018,7 +1018,9 @@ function EvidenceTab({
                   </TableCell>
                   <TableCell className="whitespace-normal text-xs">{sale.match}</TableCell>
                   <TableCell className="text-xs tabular-nums">{sale.soldAt}</TableCell>
-                  <TableCell className="text-right tabular-nums">£{sale.price}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    £{sale.price.toFixed(2)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
