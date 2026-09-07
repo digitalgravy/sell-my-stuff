@@ -8,7 +8,14 @@ The first deployment requires separate container, DNS and reverse-proxy proposal
 
 The application is a standard self-hosted Next.js Node server built with
 `output: 'standalone'`. The production image runs as the unprivileged `node`
-user. Before enabling capture, provision PostgreSQL and a durable upload volume,
-apply all checked-in migrations with `npm run db:migrate`, configure
-`DATABASE_URL` and `SELL_STORAGE_PATH`, and only then change
-`CAPTURE_API_ENABLED` to `true` through the Overseer deployment flow.
+user. Every checked-in migration under `drizzle/` is applied automatically by
+`entrypoint.sh` on every container start (`dist/migrate.cjs`, bundled at build
+time from `server/db/run-migrations.ts`) — a failed migration fails the
+container's startup outright rather than letting the app or worker run
+against a stale schema. No manual `db:migrate` step is needed for a deploy;
+that script remains for local development only (see DEVELOPMENT.md). Before
+enabling capture for the first time, provision PostgreSQL and a durable
+upload volume, configure `DATABASE_URL` (or the discrete `DATABASE_HOST` /
+`DATABASE_PORT` / `DATABASE_NAME` / `DATABASE_USER` / `DATABASE_PASSWORD`
+vars) and `SELL_STORAGE_PATH`, and only then change `CAPTURE_API_ENABLED` to
+`true` through the Overseer deployment flow.
