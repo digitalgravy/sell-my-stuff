@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { inArray, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 
 import { identificationRuns, itemFacts, items, jobs, photos } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
@@ -195,5 +195,30 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
         updatedAt: new Date(),
       })
       .where(sql`${jobs.id} = ${jobId}`);
+  }
+
+  async getIdentityFacts(itemId: string): Promise<{ field: string; value: string }[]> {
+    const database = getDatabase();
+    return database
+      .select({ field: itemFacts.field, value: itemFacts.value })
+      .from(itemFacts)
+      .where(eq(itemFacts.itemId, itemId));
+  }
+
+  async enqueueJob(input: {
+    itemId: string;
+    type: string;
+    idempotencyKey: string;
+  }): Promise<void> {
+    const database = getDatabase();
+    await database
+      .insert(jobs)
+      .values({
+        id: randomUUID(),
+        itemId: input.itemId,
+        type: input.type,
+        idempotencyKey: input.idempotencyKey,
+      })
+      .onConflictDoNothing({ target: jobs.idempotencyKey });
   }
 }

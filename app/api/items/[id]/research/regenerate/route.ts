@@ -8,10 +8,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   if (!isTrustedRequestOrigin(request)) {
-    return Response.json(
-      { error: 'Untrusted request origin' },
-      { status: 403 },
-    );
+    return Response.json({ error: 'Untrusted request origin' }, { status: 403 });
   }
   if (process.env.CAPTURE_API_ENABLED !== 'true') {
     return Response.json({ error: 'Item not found' }, { status: 404 });
@@ -20,20 +17,18 @@ export async function POST(
   const { id } = await params;
 
   try {
-    const outcome = await new PostgresItemDetailRepository().requestReidentification(
-      id,
-    );
+    const outcome = await new PostgresItemDetailRepository().regenerateResearch(id);
     if (!outcome.ok) {
       return Response.json({ error: outcome.reason }, { status: 400 });
     }
-    return Response.json({ status: 'INBOX' });
+    return Response.json({ ok: true });
   } catch (error) {
     console.error(
-      'Failed to retry an item',
+      'Failed to regenerate research',
       error instanceof Error ? error.name : 'UnknownError',
     );
     return Response.json(
-      { error: 'Could not retry this item' },
+      { error: 'Could not regenerate the eBay search' },
       { status: 500 },
     );
   }

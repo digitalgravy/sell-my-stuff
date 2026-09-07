@@ -119,7 +119,8 @@ export function ItemDetailView({
   const [activeTab, setActiveTab] = useState('overview');
   const [correcting, setCorrecting] = useState<Correcting | null>(null);
   const [draftValue, setDraftValue] = useState('');
-  const [undoingCaptureId, setUndoingCaptureId] = useState<string | null>(null);
+  const [undoingEndpoint, setUndoingEndpoint] = useState<string | null>(null);
+  const [regeneratingResearch, setRegeneratingResearch] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,10 +179,10 @@ export function ItemDetailView({
       .finally(() => setRetrying(false));
   }, [apiBase]);
 
-  const undoImport = useCallback(
-    (captureId: string) => {
-      setUndoingCaptureId(captureId);
-      fetch(`${apiBase}/research/captures/${captureId}/import`, { method: 'DELETE' })
+  const undoStep = useCallback(
+    (endpoint: string) => {
+      setUndoingEndpoint(endpoint);
+      fetch(`${apiBase}/${endpoint}`, { method: 'DELETE' })
         .then((response) => {
           if (!response.ok) throw new Error();
           return requestItemDetail(apiBase);
@@ -191,10 +192,25 @@ export function ItemDetailView({
           setStatus('ready');
         })
         .catch(() => undefined)
-        .finally(() => setUndoingCaptureId(null));
+        .finally(() => setUndoingEndpoint(null));
     },
     [apiBase],
   );
+
+  const regenerateResearch = useCallback(() => {
+    setRegeneratingResearch(true);
+    fetch(`${apiBase}/research/regenerate`, { method: 'POST' })
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        return requestItemDetail(apiBase);
+      })
+      .then((data) => {
+        setDetail(data);
+        setStatus('ready');
+      })
+      .catch(() => undefined)
+      .finally(() => setRegeneratingResearch(false));
+  }, [apiBase]);
 
   const confirmDelete = useCallback(() => {
     setDeleting(true);
@@ -255,6 +271,10 @@ export function ItemDetailView({
       }
       if (task.ctaLabel === 'Retry') {
         retry();
+        return;
+      }
+      if (task.ctaLabel === 'Search eBay' && task.href) {
+        window.open(task.href, '_blank', 'noopener,noreferrer');
       }
     },
     [openCorrection, retry],
@@ -288,11 +308,18 @@ export function ItemDetailView({
                   <span className="ml-auto text-xs text-muted-foreground">Soon</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  disabled={readOnly || detail.status !== 'FAILED' || retrying}
+                  disabled={readOnly || detail.status === 'IDENTIFYING' || retrying}
                   onClick={retry}
                 >
                   <RefreshCw className={cn(retrying && 'animate-spin')} />
-                  Run research again
+                  Re-run identification
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={readOnly || regeneratingResearch}
+                  onClick={regenerateResearch}
+                >
+                  <RefreshCw className={cn(regeneratingResearch && 'animate-spin')} />
+                  Regenerate eBay search
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled>
                   <Archive />
@@ -409,8 +436,8 @@ export function ItemDetailView({
                     <BuildLog
                       steps={detail.buildSteps}
                       readOnly={readOnly}
-                      undoingCaptureId={undoingCaptureId}
-                      onUndoImport={undoImport}
+                      undoingEndpoint={undoingEndpoint}
+                      onUndo={undoStep}
                     />
                   </div>
                 </section>
@@ -822,7 +849,9 @@ function AttentionGroup({
   onCta: (task: AttentionTask) => void;
 }) {
   const actionable = (task: AttentionTask) =>
-    (task.ctaLabel === 'Correct' && task.field !== undefined) || task.ctaLabel === 'Retry';
+    (task.ctaLabel === 'Correct' && task.field !== undefined) ||
+    task.ctaLabel === 'Retry' ||
+    (task.ctaLabel === 'Search eBay' && task.href !== undefined);
 
   return (
     <div>

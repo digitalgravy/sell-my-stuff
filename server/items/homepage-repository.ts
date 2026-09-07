@@ -13,6 +13,8 @@ export interface HomepageItemFacts {
   manufacturer?: string;
   model?: string;
   openQuestions: string[];
+  /** Set once research_comparable_sales completes -- a direct, pre-filtered eBay Sold+Completed search link. */
+  ebaySearchUrl?: string;
 }
 
 export interface HomepageItemRow {
@@ -24,6 +26,8 @@ export interface HomepageItemRow {
   jobState?: JobStateValue;
   /** The most recent inspect_images job's error, present only when status is FAILED. */
   lastError?: string;
+  /** Whether at least one comparable sale has been imported onto this item. */
+  hasEvidence: boolean;
 }
 
 export interface HomepageRepository {

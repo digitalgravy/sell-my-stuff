@@ -41,6 +41,8 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
     retryAt?: Date;
   }[] = [];
   runLogs: IdentificationRunLogInput[] = [];
+  enqueued: { itemId: string; type: string; idempotencyKey: string }[] = [];
+  identityFacts: { field: string; value: string }[] = [];
 
   async claimNextJob(type: string, maxAttempts: number, _leaseMs: number) {
     const index = this.queue.findIndex(
@@ -86,6 +88,14 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
     retryAt?: Date,
   ) {
     this.failed.push({ jobId, error, outcome, retryAt });
+  }
+
+  async getIdentityFacts(_itemId: string) {
+    return this.identityFacts;
+  }
+
+  async enqueueJob(input: { itemId: string; type: string; idempotencyKey: string }) {
+    this.enqueued.push(input);
   }
 }
 
@@ -188,6 +198,9 @@ void test('claims a queued job, saves facts and marks the item researching', asy
   assert.deepEqual(jobs.statusHistory, ['IDENTIFYING', 'RESEARCHING']);
   assert.deepEqual(jobs.inspectedPhotoIds, ['photo-1']);
   assert.deepEqual(jobs.completed, [{ jobId: 'job-1', progress: 100 }]);
+  assert.equal(jobs.enqueued.length, 1);
+  assert.equal(jobs.enqueued[0]?.itemId, 'item-1');
+  assert.equal(jobs.enqueued[0]?.type, 'research_comparable_sales');
   const manufacturerFact = jobs.savedFacts.find(
     (fact) => fact.field === 'identity.manufacturer',
   );
@@ -271,6 +284,11 @@ void test('routes low-confidence identification to needs information', async () 
   assert.deepEqual(JSON.parse(openQuestionsFact?.value ?? '[]'), [
     'Which memory capacity variant is this?',
   ]);
+  assert.deepEqual(
+    jobs.enqueued,
+    [],
+    'no research job should be queued until identification is actually confident',
+  );
 });
 
 void test('returns claimed:false when no job is queued', async () => {

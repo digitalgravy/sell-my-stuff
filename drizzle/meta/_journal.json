@@ -50,6 +50,13 @@
       "when": 1788738359602,
       "tag": "0006_bright_stark_industries",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788740258344,
+      "tag": "0007_workable_husk",
+      "breakpoints": true
     }
   ]
 }

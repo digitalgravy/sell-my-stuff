@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 
-import { itemFacts, items, jobs } from '@/db/schema';
+import { comparableSales, itemFacts, items, jobs } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 
@@ -29,6 +29,7 @@ const DISPLAY_FACT_FIELDS = [
   'identity.manufacturer',
   'identity.model',
   'identity.open_questions',
+  'research.ebay_search_url',
 ] as const;
 
 export class PostgresHomepageRepository implements HomepageRepository {
@@ -75,11 +76,18 @@ export class PostgresHomepageRepository implements HomepageRepository {
         case 'identity.open_questions':
           entry.openQuestions = parseStringArray(row.value);
           break;
+        case 'research.ebay_search_url':
+          entry.ebaySearchUrl = parseString(row.value);
+          break;
       }
       factsByItem.set(row.itemId, entry);
     }
 
     const jobInfoByItem = await this.#loadJobInfo(
+      database,
+      itemRows.map((row) => row.id),
+    );
+    const itemIdsWithEvidence = await this.#loadItemIdsWithEvidence(
       database,
       itemRows.map((row) => row.id),
     );
@@ -91,7 +99,20 @@ export class PostgresHomepageRepository implements HomepageRepository {
       facts: factsByItem.get(row.id) ?? { openQuestions: [] },
       jobState: jobInfoByItem.get(row.id)?.state,
       lastError: jobInfoByItem.get(row.id)?.lastError,
+      hasEvidence: itemIdsWithEvidence.has(row.id),
     }));
+  }
+
+  async #loadItemIdsWithEvidence(
+    database: ReturnType<typeof getDatabase>,
+    itemIds: string[],
+  ): Promise<Set<string>> {
+    if (itemIds.length === 0) return new Set();
+    const rows = await database
+      .selectDistinct({ itemId: comparableSales.itemId })
+      .from(comparableSales)
+      .where(inArray(comparableSales.itemId, itemIds));
+    return new Set(rows.map((row) => row.itemId));
   }
 
   /** Most recent inspect_images job's state/error per item. */

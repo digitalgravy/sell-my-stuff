@@ -83,4 +83,7 @@ export interface ResearchJobRepository {
     outcome: 'RETRY' | 'FAILED',
     retryAt?: Date,
   ): Promise<void>;
+  getIdentityFacts(itemId: string): Promise<{ field: string; value: string }[]>;
+  /** No-ops (rather than erroring) if idempotencyKey already exists -- callers may safely re-enqueue on retry. */
+  enqueueJob(input: { itemId: string; type: string; idempotencyKey: string }): Promise<void>;
 }

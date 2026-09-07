@@ -36,12 +36,13 @@ export interface HomepageSnapshot {
 // get a real stage label; anything else falls back to its raw status so a
 // future stage is visible, not silently dropped, until this map is extended.
 //
-// RESEARCHING is deliberately NOT "Researching recent sales" here: no code
-// processes that status yet (no second job type exists — see
-// PROJECT_STATUS.md), so that copy would claim ongoing work that isn't
-// happening. The label must say what's actually true — identified, and
-// stalled only because the next stage isn't built — not what the status
-// name suggests. Update this the moment a real research job exists.
+// RESEARCHING now does have a real job behind it (research_comparable_sales
+// builds the eBay search link), but that job is near-instant and its
+// *result* routes straight to the `attention` list above once ready ("go
+// search eBay") rather than staying here — this label only ever shows
+// while genuinely nothing is queued/running/actionable for the item, e.g.
+// between identification finishing and the research job being picked up,
+// or after the eBay search has already been captured (hasEvidence true).
 const WORKING_STAGE_LABEL: Partial<Record<HomepageItemRow['status'], string>> =
   {
     INBOX: 'Queued for identification',
@@ -68,6 +69,13 @@ export function buildHomepageSnapshot(
         id: row.id,
         title,
         reason: row.facts.openQuestions[0] ?? NO_OPEN_QUESTION_REASON,
+        updatedAt,
+      });
+    } else if (row.status === 'RESEARCHING' && row.facts.ebaySearchUrl && !row.hasEvidence) {
+      attention.push({
+        id: row.id,
+        title,
+        reason: 'Ready to search eBay for comparable sold listings',
         updatedAt,
       });
     } else if (row.status === 'FAILED') {

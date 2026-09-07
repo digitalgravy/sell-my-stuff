@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import {
   comparableSales,
+  factCorrections,
   identificationRuns,
   itemFacts,
   items,
@@ -13,6 +14,7 @@ import {
 } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
+import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from '@/server/jobs/research-comparable-sales-job';
 
 import { deriveActivityState } from './homepage-snapshot';
 import type {
@@ -23,10 +25,14 @@ import type {
   ItemDetailFact,
   ItemDetailPhoto,
   ItemDetailRepository,
+  RegenerateResearchOutcome,
   RetryOutcome,
+  UndoCorrectionOutcome,
 } from './item-detail-repository';
 import {
+  buildStepsFromCorrections,
   buildStepsFromImports,
+  buildStepsFromResearchJobs,
   buildStepsFromRuns,
   deriveAttention,
   derivePhases,
@@ -56,7 +62,16 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       .where(eq(items.id, itemId));
     if (!item) return null;
 
-    const [photoRows, factRows, runRows, [job], comparableSaleRows, importRows] = await Promise.all([
+    const [
+      photoRows,
+      factRows,
+      runRows,
+      [job],
+      comparableSaleRows,
+      importRows,
+      researchJobRows,
+      correctionRows,
+    ] = await Promise.all([
       database
         .select({ id: photos.id, position: photos.position })
         .from(photos)
@@ -119,6 +134,27 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .from(researchCaptures)
         .where(eq(researchCaptures.importedIntoItemId, itemId))
         .orderBy(desc(researchCaptures.importedAt)),
+      database
+        .select({
+          id: jobs.id,
+          state: jobs.state,
+          lastError: jobs.lastError,
+          updatedAt: jobs.updatedAt,
+        })
+        .from(jobs)
+        .where(and(eq(jobs.itemId, itemId), eq(jobs.type, RESEARCH_COMPARABLE_SALES_JOB_TYPE)))
+        .orderBy(desc(jobs.updatedAt)),
+      database
+        .select({
+          id: factCorrections.id,
+          field: factCorrections.field,
+          previousValue: factCorrections.previousValue,
+          newValue: factCorrections.newValue,
+          correctedAt: factCorrections.correctedAt,
+        })
+        .from(factCorrections)
+        .where(and(eq(factCorrections.itemId, itemId), isNull(factCorrections.revertedAt)))
+        .orderBy(desc(factCorrections.correctedAt)),
     ]);
 
     const facts: ItemDetailFact[] = factRows.map((row) => ({
@@ -134,6 +170,9 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     const openQuestions = parseStringArray(
       factRows.find((row) => row.field === 'identity.open_questions')?.value,
     );
+    const ebaySearchUrlRaw = factRows.find((row) => row.field === 'research.ebay_search_url')?.value;
+    const ebaySearchUrl =
+      typeof ebaySearchUrlRaw === 'string' ? (parseFactValue(ebaySearchUrlRaw) as string) : undefined;
 
     const photoList: ItemDetailPhoto[] = photoRows.map((row, index) => ({
       id: row.id,
@@ -142,45 +181,75 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       position: row.position,
     }));
 
-    // Two independent sources of build-log entries (identification runs,
-    // comparable-sales imports) merged into one chronological list --
-    // each timestamped record keeps the source it came from so the right
-    // builder function turns it into a BuildStep.
+    // Three independent sources of build-log entries (identification runs,
+    // Four independent sources of build-log entries (identification runs,
+    // comparable-sales imports, eBay-search-link jobs, fact corrections)
+    // merged into one chronological list -- each timestamped record keeps
+    // the source it came from so the right builder function turns it into
+    // a BuildStep.
     const timestampedSteps = [
       ...runRows.map((row) => ({ at: row.startedAt, kind: 'run' as const, row })),
       ...importRows.map((row) => ({ at: row.importedAt!, kind: 'import' as const, row })),
+      ...researchJobRows
+        .filter((row) => row.state === 'SUCCEEDED' || row.state === 'FAILED')
+        .map((row) => ({ at: row.updatedAt, kind: 'research' as const, row })),
+      ...correctionRows.map((row) => ({ at: row.correctedAt, kind: 'correction' as const, row })),
     ].sort((a, b) => b.at.getTime() - a.at.getTime());
 
-    const buildSteps = timestampedSteps.flatMap(({ kind, row }) =>
-      kind === 'run'
-        ? buildStepsFromRuns(
+    const buildSteps = timestampedSteps.flatMap((entry) => {
+      switch (entry.kind) {
+        case 'run':
+          return buildStepsFromRuns(
             [
               {
-                id: row.id,
-                attempt: row.attempt,
-                provider: row.provider,
-                model: row.model,
-                outcome: row.outcome,
-                inputTokens: row.inputTokens ?? undefined,
-                outputTokens: row.outputTokens ?? undefined,
-                response: row.response ?? undefined,
-                errorMessage: row.errorMessage ?? undefined,
-                startedAt: row.startedAt.toISOString(),
-                completedAt: row.completedAt.toISOString(),
+                id: entry.row.id,
+                attempt: entry.row.attempt,
+                provider: entry.row.provider,
+                model: entry.row.model,
+                outcome: entry.row.outcome,
+                inputTokens: entry.row.inputTokens ?? undefined,
+                outputTokens: entry.row.outputTokens ?? undefined,
+                response: entry.row.response ?? undefined,
+                errorMessage: entry.row.errorMessage ?? undefined,
+                startedAt: entry.row.startedAt.toISOString(),
+                completedAt: entry.row.completedAt.toISOString(),
               },
             ],
             photoRows.length,
-          )
-        : buildStepsFromImports([
+          );
+        case 'import':
+          return buildStepsFromImports([
             {
-              captureId: row.id,
-              sourceUrl: row.sourceUrl,
-              pageTitle: row.pageTitle,
-              importedCount: Array.isArray(row.extractedSales) ? row.extractedSales.length : 0,
-              importedAt: row.importedAt!.toISOString(),
+              captureId: entry.row.id,
+              sourceUrl: entry.row.sourceUrl,
+              pageTitle: entry.row.pageTitle,
+              importedCount: Array.isArray(entry.row.extractedSales)
+                ? entry.row.extractedSales.length
+                : 0,
+              importedAt: entry.row.importedAt!.toISOString(),
             },
-          ]),
-    );
+          ]);
+        case 'research':
+          return buildStepsFromResearchJobs([
+            {
+              id: entry.row.id,
+              state: entry.row.state,
+              lastError: entry.row.lastError,
+              searchUrl: ebaySearchUrl,
+            },
+          ]);
+        case 'correction':
+          return buildStepsFromCorrections([
+            {
+              id: entry.row.id,
+              field: entry.row.field,
+              previousValue: entry.row.previousValue,
+              newValue: entry.row.newValue,
+              correctedAt: entry.row.correctedAt.toISOString(),
+            },
+          ]);
+      }
+    });
 
     return {
       id: item.id,
@@ -198,6 +267,8 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         status: item.status,
         openQuestions,
         lastError: job?.lastError ?? undefined,
+        ebaySearchUrl,
+        hasEvidence: comparableSaleRows.length > 0,
       }),
       evidence: comparableSaleRows.length > 0 ? buildEvidence(comparableSaleRows) : undefined,
       buildSteps,
@@ -216,48 +287,53 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     return photo ?? null;
   }
 
-  async retryFailedItem(itemId: string): Promise<RetryOutcome> {
+  async requestReidentification(itemId: string): Promise<RetryOutcome> {
     const database = getDatabase();
     return database.transaction(async (tx) => {
       const [item] = await tx
-        .select({ status: items.status })
+        .select({ status: items.status, revision: items.revision })
         .from(items)
         .where(eq(items.id, itemId));
       if (!item) return { ok: false, reason: 'Item not found' };
-      if (item.status !== 'FAILED') {
-        return { ok: false, reason: 'Item is not in a failed state' };
+      if (item.status === 'IDENTIFYING') {
+        return { ok: false, reason: 'Identification is already running' };
       }
 
-      const [job] = await tx
-        .select({ id: jobs.id })
-        .from(jobs)
-        .where(
-          and(eq(jobs.itemId, itemId), eq(jobs.type, INSPECT_IMAGES_JOB_TYPE)),
-        );
-      if (!job) return { ok: false, reason: 'No job found to retry' };
-
-      await tx
-        .update(jobs)
-        .set({
-          state: 'QUEUED',
-          attempt: 0,
-          availableAt: new Date(),
-          lockedAt: null,
-          lastError: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(jobs.id, job.id));
+      // A fresh job row, not a reset of any existing one -- prior attempts
+      // (and their identification_runs / Build log entries) stay exactly
+      // as they were; this one starts its own attempt count from zero.
+      const newRevision = item.revision + 1;
+      await tx.insert(jobs).values({
+        id: randomUUID(),
+        itemId,
+        type: INSPECT_IMAGES_JOB_TYPE,
+        idempotencyKey: `${INSPECT_IMAGES_JOB_TYPE}:${itemId}:${newRevision}`,
+      });
       await tx
         .update(items)
-        .set({
-          status: 'INBOX',
-          revision: sql`${items.revision} + 1`,
-          updatedAt: new Date(),
-        })
+        .set({ status: 'INBOX', revision: newRevision, updatedAt: new Date() })
         .where(eq(items.id, itemId));
 
       return { ok: true };
     });
+  }
+
+  async regenerateResearch(itemId: string): Promise<RegenerateResearchOutcome> {
+    const database = getDatabase();
+    const [item] = await database
+      .select({ id: items.id })
+      .from(items)
+      .where(eq(items.id, itemId));
+    if (!item) return { ok: false, reason: 'Item not found' };
+
+    await database.insert(jobs).values({
+      id: randomUUID(),
+      itemId,
+      type: RESEARCH_COMPARABLE_SALES_JOB_TYPE,
+      idempotencyKey: `${RESEARCH_COMPARABLE_SALES_JOB_TYPE}:${itemId}:${randomUUID()}`,
+    });
+
+    return { ok: true };
   }
 
   async correctFact(
@@ -272,25 +348,83 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       .where(eq(items.id, itemId));
     if (!item) return { ok: false, reason: 'Item not found' };
 
-    await database
-      .insert(itemFacts)
-      .values({
+    const newValue = JSON.stringify(value);
+
+    await database.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ value: itemFacts.value, origin: itemFacts.origin })
+        .from(itemFacts)
+        .where(and(eq(itemFacts.itemId, itemId), eq(itemFacts.field, field)));
+
+      await tx.insert(factCorrections).values({
         id: randomUUID(),
         itemId,
         field,
-        value: JSON.stringify(value),
-        confidence: 1,
-        origin: 'user_confirmed',
-      })
-      .onConflictDoUpdate({
-        target: [itemFacts.itemId, itemFacts.field],
-        set: {
-          value: sql`excluded.value`,
-          confidence: sql`excluded.confidence`,
-          origin: sql`excluded.origin`,
-          retrievedAt: sql`now()`,
-        },
+        previousValue: existing?.value ?? null,
+        previousOrigin: existing?.origin,
+        newValue,
       });
+
+      await tx
+        .insert(itemFacts)
+        .values({
+          id: randomUUID(),
+          itemId,
+          field,
+          value: newValue,
+          confidence: 1,
+          origin: 'user_confirmed',
+        })
+        .onConflictDoUpdate({
+          target: [itemFacts.itemId, itemFacts.field],
+          set: {
+            value: sql`excluded.value`,
+            confidence: sql`excluded.confidence`,
+            origin: sql`excluded.origin`,
+            retrievedAt: sql`now()`,
+          },
+        });
+    });
+
+    return { ok: true };
+  }
+
+  async undoCorrection(itemId: string, correctionId: string): Promise<UndoCorrectionOutcome> {
+    const database = getDatabase();
+    const [correction] = await database
+      .select({
+        itemId: factCorrections.itemId,
+        field: factCorrections.field,
+        previousValue: factCorrections.previousValue,
+        previousOrigin: factCorrections.previousOrigin,
+        revertedAt: factCorrections.revertedAt,
+      })
+      .from(factCorrections)
+      .where(eq(factCorrections.id, correctionId));
+    if (!correction || correction.itemId !== itemId || correction.revertedAt) {
+      return { ok: false, reason: 'Correction not found' };
+    }
+
+    await database.transaction(async (tx) => {
+      if (correction.previousValue !== null && correction.previousOrigin) {
+        await tx
+          .update(itemFacts)
+          .set({
+            value: correction.previousValue,
+            origin: correction.previousOrigin,
+            retrievedAt: new Date(),
+          })
+          .where(and(eq(itemFacts.itemId, itemId), eq(itemFacts.field, correction.field)));
+      } else {
+        await tx
+          .delete(itemFacts)
+          .where(and(eq(itemFacts.itemId, itemId), eq(itemFacts.field, correction.field)));
+      }
+      await tx
+        .update(factCorrections)
+        .set({ revertedAt: new Date() })
+        .where(eq(factCorrections.id, correctionId));
+    });
 
     return { ok: true };
   }

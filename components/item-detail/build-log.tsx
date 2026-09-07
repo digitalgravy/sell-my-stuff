@@ -13,13 +13,13 @@ const TYPE_BADGE: Record<BuildStepType, { label: string; className: string }> = 
 export function BuildLog({
   steps,
   readOnly,
-  undoingCaptureId,
-  onUndoImport,
+  undoingEndpoint,
+  onUndo,
 }: {
   steps: BuildStep[];
   readOnly?: boolean;
-  undoingCaptureId?: string | null;
-  onUndoImport?: (captureId: string) => void;
+  undoingEndpoint?: string | null;
+  onUndo?: (endpoint: string) => void;
 }) {
   if (steps.length === 0) {
     return (
@@ -37,8 +37,8 @@ export function BuildLog({
           step={step}
           index={index}
           readOnly={readOnly}
-          undoing={undoingCaptureId === step.undo?.captureId}
-          onUndoImport={onUndoImport}
+          undoing={undoingEndpoint === step.undo?.endpoint}
+          onUndo={onUndo}
         />
       ))}
     </div>
@@ -50,13 +50,13 @@ function BuildStepEntry({
   index,
   readOnly,
   undoing,
-  onUndoImport,
+  onUndo,
 }: {
   step: BuildStep;
   index: number;
   readOnly?: boolean;
   undoing?: boolean;
-  onUndoImport?: (captureId: string) => void;
+  onUndo?: (endpoint: string) => void;
 }) {
   const badge = TYPE_BADGE[step.type];
   return (
@@ -110,9 +110,9 @@ function BuildStepEntry({
               size="sm"
               variant="outline"
               disabled={undoing}
-              onClick={() => onUndoImport?.(step.undo!.captureId)}
+              onClick={() => onUndo?.(step.undo!.endpoint)}
             >
-              {undoing ? 'Undoing…' : 'Undo import'}
+              {undoing ? 'Undoing…' : 'Undo'}
             </Button>
           ) : null}
         </div>

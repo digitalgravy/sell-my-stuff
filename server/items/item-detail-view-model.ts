@@ -61,7 +61,23 @@ export function deriveAttention(input: {
   status: ItemStatusValue;
   openQuestions: string[];
   lastError?: string;
+  ebaySearchUrl?: string;
+  hasEvidence: boolean;
 }): AttentionTask[] {
+  if (input.status === 'RESEARCHING' && input.ebaySearchUrl && !input.hasEvidence) {
+    return [
+      {
+        id: 'research-ebay',
+        title: 'Find comparable sold listings on eBay',
+        note: 'There is no automated eBay search -- eBay blocks automated browsers, so this opens a pre-filtered Sold + Completed search for you to capture with the bookmarklet.',
+        impact: 'Why it matters: pricing needs real comparable sales before a listing can be drafted.',
+        ctaLabel: 'Search eBay',
+        href: input.ebaySearchUrl,
+        required: true,
+      },
+    ];
+  }
+
   if (input.status === 'NEEDS_INFORMATION') {
     if (input.openQuestions.length > 0) {
       return input.openQuestions.map((question, index) => ({
@@ -197,8 +213,71 @@ export function buildStepsFromImports(imports: ImportForBuildStep[]): BuildStep[
         content: imp.sourceUrl ?? 'No source URL was recorded for this capture.',
       },
     ],
-    undo: { captureId: imp.captureId },
+    undo: { endpoint: `research/captures/${imp.captureId}/import` },
   }));
+}
+
+export interface CorrectionForBuildStep {
+  id: string;
+  field: string;
+  previousValue: string | null;
+  newValue: string;
+  correctedAt: string;
+}
+
+/**
+ * One build step per active (not-yet-undone) fact correction -- a human
+ * override recorded the same way an import is, and reversible the same
+ * way: undo restores the exact previous value rather than guessing.
+ */
+export function buildStepsFromCorrections(corrections: CorrectionForBuildStep[]): BuildStep[] {
+  return corrections.map((correction) => ({
+    id: `correction:${correction.id}`,
+    stage: 'Correct a fact',
+    detail: `Corrected ${correction.field}`,
+    type: 'policy',
+    outcome: 'succeeded',
+    durationMs: 0,
+    blocks: [
+      {
+        label: correction.field,
+        content: `${correction.previousValue ?? '(no prior value)'} → ${correction.newValue}`,
+      },
+    ],
+    undo: { endpoint: `facts/correct/${correction.id}` },
+  }));
+}
+
+export interface ResearchJobForBuildStep {
+  id: string;
+  state: string;
+  lastError: string | null;
+  searchUrl?: string;
+}
+
+/**
+ * One build step per terminal research_comparable_sales attempt -- QUEUED
+ * and RUNNING are deliberately invisible here, matching identification
+ * runs: a row only becomes a step once there's something to report.
+ */
+export function buildStepsFromResearchJobs(jobsForStep: ResearchJobForBuildStep[]): BuildStep[] {
+  return jobsForStep
+    .filter((job) => job.state === 'SUCCEEDED' || job.state === 'FAILED')
+    .map((job) => ({
+      id: `research:${job.id}`,
+      stage: 'Prepare eBay search',
+      detail:
+        job.state === 'SUCCEEDED'
+          ? 'Built a pre-filtered eBay Sold + Completed search link from the identified facts'
+          : 'Could not build a search link',
+      type: 'compute',
+      outcome: job.state === 'SUCCEEDED' ? 'succeeded' : 'failed',
+      durationMs: 0,
+      blocks:
+        job.state === 'SUCCEEDED' && job.searchUrl
+          ? [{ label: 'eBay search', content: job.searchUrl }]
+          : [{ label: 'Error', content: job.lastError ?? 'Unknown error' }],
+    }));
 }
 
 function countCandidates(response: unknown): number {

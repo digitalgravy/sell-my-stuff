@@ -159,6 +159,32 @@ export const itemFacts = pgTable(
 );
 
 /**
+ * One row per user correction to a fact -- captures the prior value (null
+ * if the field didn't exist yet) so a correction can be undone exactly,
+ * and surfaced as its own Build log entry the same way a comparable-sales
+ * import is. `revertedAt` set means undone; it then drops out of the log,
+ * matching how an undone import disappears rather than showing "undone".
+ */
+export const factCorrections = pgTable(
+  'fact_corrections',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    field: text('field').notNull(),
+    previousValue: text('previous_value'),
+    previousOrigin: factOrigin('previous_origin'),
+    newValue: text('new_value').notNull(),
+    correctedAt: timestamp('corrected_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    revertedAt: timestamp('reverted_at', { withTimezone: true }),
+  },
+  (table) => [index('fact_corrections_item_idx').on(table.itemId)],
+);
+
+/**
  * A raw eBay results page, captured by the bookmarklet (see
  * app/tools/capture) from the user's own real desktop browser rather
  * than the automated sell-browser service -- eBay's own anti-bot

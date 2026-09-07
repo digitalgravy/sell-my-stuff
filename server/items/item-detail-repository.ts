@@ -34,8 +34,12 @@ export interface BuildStep {
   durationMs: number;
   blocks: BuildStepBlock[];
   artifacts?: string[];
-  /** Present only on steps that can be reversed (e.g. a comparable-sales import) -- lets the UI offer an Undo control. */
-  undo?: { captureId: string };
+  /**
+   * Present only on steps that can be reversed (a comparable-sales import,
+   * a fact correction) -- lets the UI offer an Undo control. `endpoint` is
+   * a path relative to `/api/items/{id}/` that a DELETE reverts.
+   */
+  undo?: { endpoint: string };
 }
 
 export type PhaseState = 'done' | 'pending' | 'not_started';
@@ -50,6 +54,8 @@ export interface PhaseInfo {
 export interface AttentionTask {
   id: string;
   field?: string;
+  /** Present only on tasks whose CTA is "open this link" rather than an in-app action. */
+  href?: string;
   title: string;
   note: string;
   impact: string;
@@ -120,6 +126,8 @@ export interface ItemDetail {
 
 export type RetryOutcome = { ok: true } | { ok: false; reason: string };
 export type CorrectFactOutcome = { ok: true } | { ok: false; reason: string };
+export type UndoCorrectionOutcome = { ok: true } | { ok: false; reason: string };
+export type RegenerateResearchOutcome = { ok: true } | { ok: false; reason: string };
 
 export interface ItemDetailRepository {
   getItemDetail(itemId: string): Promise<ItemDetail | null>;
@@ -127,14 +135,24 @@ export interface ItemDetailRepository {
     itemId: string,
     photoId: string,
   ): Promise<{ objectKey: string; mediaType: string } | null>;
-  /** Manual override, always available regardless of any auto-retry policy — requires the item to currently be FAILED. */
-  retryFailedItem(itemId: string): Promise<RetryOutcome>;
-  /** Records a user-supplied correction as a `user_confirmed` fact — becomes the authoritative value. */
+  /**
+   * Manual re-run of identification, always available regardless of any
+   * auto-retry policy or current status (except IDENTIFYING, where an
+   * attempt is already in flight) -- creates a fresh job/attempt rather
+   * than mutating an existing one, so every prior attempt stays visible
+   * in the Build log rather than being overwritten.
+   */
+  requestReidentification(itemId: string): Promise<RetryOutcome>;
+  /** Records a user-supplied correction as a `user_confirmed` fact, and logs it (with the prior value) so it can be undone. */
   correctFact(
     itemId: string,
     field: string,
     value: string,
   ): Promise<CorrectFactOutcome>;
+  /** Reverts one correction to exactly its prior value (or removes the fact if there was none before it). */
+  undoCorrection(itemId: string, correctionId: string): Promise<UndoCorrectionOutcome>;
+  /** Manually re-queues research_comparable_sales -- e.g. after correcting a fact the eBay search was built from. */
+  regenerateResearch(itemId: string): Promise<RegenerateResearchOutcome>;
   /** Permanently deletes the item and everything under it (photos, facts, jobs, build log — cascade). */
   deleteItem(itemId: string): Promise<{ ok: boolean }>;
 }

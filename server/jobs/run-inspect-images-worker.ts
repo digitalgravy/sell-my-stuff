@@ -4,6 +4,7 @@ import { PostgresResearchJobRepository } from '@/server/items/postgres-research-
 import { getFileObjectStore } from '@/server/storage/file-object-store';
 
 import { runInspectImagesJob } from './inspect-images-job';
+import { runResearchComparableSalesJob } from './research-comparable-sales-job';
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 5000);
 
@@ -19,7 +20,7 @@ async function main() {
     photoConverter: getPhotoConverter(),
   };
 
-  console.log('inspect_images worker started');
+  console.log('job worker started (inspect_images, research_comparable_sales)');
   let shuttingDown = false;
   process.on('SIGTERM', () => {
     shuttingDown = true;
@@ -30,20 +31,29 @@ async function main() {
 
   while (!shuttingDown) {
     try {
-      const result = await runInspectImagesJob(dependencies);
-      if (!result.claimed) {
-        await sleep(POLL_INTERVAL_MS);
+      const inspectResult = await runInspectImagesJob(dependencies);
+      if (inspectResult.claimed) {
+        console.log(
+          `inspect_images job for item ${inspectResult.itemId} ${inspectResult.outcome}`,
+        );
         continue;
       }
-      console.log(
-        `inspect_images job for item ${result.itemId} ${result.outcome}`,
-      );
+
+      const researchResult = await runResearchComparableSalesJob(dependencies);
+      if (researchResult.claimed) {
+        console.log(
+          `research_comparable_sales job for item ${researchResult.itemId} ${researchResult.outcome}`,
+        );
+        continue;
+      }
+
+      await sleep(POLL_INTERVAL_MS);
     } catch (error) {
-      console.error('inspect_images worker iteration failed', error);
+      console.error('job worker iteration failed', error);
       await sleep(POLL_INTERVAL_MS);
     }
   }
-  console.log('inspect_images worker stopped');
+  console.log('job worker stopped');
 }
 
 void main();

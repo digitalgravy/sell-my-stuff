@@ -14,6 +14,7 @@ function row(overrides: Partial<HomepageItemRow>): HomepageItemRow {
     status: 'RESEARCHING',
     updatedAt: new Date('2026-09-04T10:00:00Z'),
     facts: { openQuestions: [] },
+    hasEvidence: false,
     ...overrides,
   };
 }
@@ -69,6 +70,42 @@ void test('routes non-NEEDS_INFORMATION statuses into working with a stage label
       'Identified — research not yet available',
     ],
   );
+});
+
+void test('routes a RESEARCHING item with a ready eBay search link into attention', () => {
+  const snapshot = buildHomepageSnapshot([
+    row({
+      status: 'RESEARCHING',
+      facts: {
+        openQuestions: [],
+        ebaySearchUrl: 'https://www.ebay.co.uk/sch/i.html?_nkw=Apple+HomePod+mini',
+      },
+      hasEvidence: false,
+    }),
+  ]);
+
+  assert.equal(snapshot.working.length, 0);
+  assert.equal(snapshot.attention.length, 1);
+  assert.equal(
+    snapshot.attention[0]?.reason,
+    'Ready to search eBay for comparable sold listings',
+  );
+});
+
+void test('a RESEARCHING item with a search link but existing evidence stays in working, not attention', () => {
+  const snapshot = buildHomepageSnapshot([
+    row({
+      status: 'RESEARCHING',
+      facts: {
+        openQuestions: [],
+        ebaySearchUrl: 'https://www.ebay.co.uk/sch/i.html?_nkw=Apple+HomePod+mini',
+      },
+      hasEvidence: true,
+    }),
+  ]);
+
+  assert.equal(snapshot.attention.length, 0);
+  assert.equal(snapshot.working.length, 1);
 });
 
 void test('deriveActivityState reflects real job state, not just lifecycle status', () => {

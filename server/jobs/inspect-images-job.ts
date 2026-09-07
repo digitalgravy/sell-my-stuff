@@ -14,6 +14,8 @@ import type {
 } from '@/server/items/research-repository';
 import type { ObjectStore } from '@/server/storage/object-store';
 
+import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from './research-comparable-sales-job';
+
 export const INSPECT_IMAGES_JOB_TYPE = 'inspect_images';
 export const DEFAULT_MAX_ATTEMPTS = 5;
 export const DEFAULT_JOB_LEASE_MS = 15 * 60 * 1000;
@@ -107,6 +109,13 @@ export async function runInspectImagesJob(
       job.itemId,
       needsInformation ? 'NEEDS_INFORMATION' : 'RESEARCHING',
     );
+    if (!needsInformation) {
+      await dependencies.jobs.enqueueJob({
+        itemId: job.itemId,
+        type: RESEARCH_COMPARABLE_SALES_JOB_TYPE,
+        idempotencyKey: `${RESEARCH_COMPARABLE_SALES_JOB_TYPE}:${job.itemId}:${job.attempt}`,
+      });
+    }
 
     await dependencies.jobs.completeJob(job.id, 100);
     return { claimed: true, itemId: job.itemId, outcome: 'succeeded' };
