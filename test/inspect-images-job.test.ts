@@ -20,7 +20,8 @@ import {
 import type {
   ClaimedJob,
   IdentificationFactInput,
-  IdentificationRunLogInput,
+  IdentificationRunCompleteInput,
+  IdentificationRunStartInput,
   ItemPhotoForResearch,
   ItemStatusValue,
   ResearchJobRepository,
@@ -40,9 +41,11 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
     outcome: 'RETRY' | 'FAILED';
     retryAt?: Date;
   }[] = [];
-  runLogs: IdentificationRunLogInput[] = [];
+  runLogs: (IdentificationRunStartInput & IdentificationRunCompleteInput)[] = [];
   enqueued: { itemId: string; type: string; idempotencyKey: string }[] = [];
   identityFacts: { field: string; value: string }[] = [];
+  private pendingRuns = new Map<string, IdentificationRunStartInput>();
+  private nextRunId = 1;
 
   async claimNextJob(type: string, maxAttempts: number, _leaseMs: number) {
     const index = this.queue.findIndex(
@@ -65,8 +68,16 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
     this.savedFacts.push(...facts);
   }
 
-  async logIdentificationRun(entry: IdentificationRunLogInput) {
-    this.runLogs.push(entry);
+  async startIdentificationRun(entry: IdentificationRunStartInput) {
+    const runId = `run-${this.nextRunId++}`;
+    this.pendingRuns.set(runId, entry);
+    return { runId };
+  }
+
+  async completeIdentificationRun(entry: IdentificationRunCompleteInput) {
+    const start = this.pendingRuns.get(entry.runId);
+    this.pendingRuns.delete(entry.runId);
+    this.runLogs.push({ ...(start as IdentificationRunStartInput), ...entry });
   }
 
   async markPhotosInspected(photoIds: string[]) {

@@ -30,7 +30,8 @@ export interface BuildStep {
   stage: string;
   detail: string;
   type: BuildStepType;
-  outcome: 'succeeded' | 'failed';
+  /** 'pending' is a real, in-flight AI call -- the request has been sent to Anthropic and no response has come back yet. */
+  outcome: 'succeeded' | 'failed' | 'pending';
   durationMs: number;
   blocks: BuildStepBlock[];
   artifacts?: string[];
@@ -134,6 +135,8 @@ export interface ItemDetail {
   listing?: ListingInfo;
   /** Undefined until real comparable-sales research exists. */
   evidence?: EvidenceInfo;
+  /** Real Anthropic API spend so far (identification + match classification calls), in USD -- 0, not undefined, when nothing has run yet. */
+  aiCostUsd: number;
   buildSteps: BuildStep[];
 }
 

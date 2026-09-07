@@ -16,6 +16,10 @@ import type {
 } from './capture-inbox-repository';
 import { buildIdentityFactsForMatching, classifyComparableSales } from './comparable-match';
 import type { ComparableSale } from './item-detail-repository';
+import {
+  completeMatchClassificationRun,
+  startMatchClassificationRun,
+} from './match-classification-runs';
 
 export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
   async saveCapture(html: string, sourceUrl: string | null): Promise<SaveCaptureResult> {
@@ -83,21 +87,38 @@ export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
     }
 
     let classifiedSales = sales;
+    const matchProvider = getAnthropicComparableMatchProvider();
+    const { runId } = await startMatchClassificationRun({
+      itemId,
+      provider: matchProvider.provider,
+      model: matchProvider.model,
+      listingCount: sales.length,
+    });
     try {
       const identityFactRows = await database
         .select({ field: itemFacts.field, value: itemFacts.value })
         .from(itemFacts)
         .where(eq(itemFacts.itemId, itemId));
       const identity = buildIdentityFactsForMatching(identityFactRows);
-      classifiedSales = await classifyComparableSales(
-        identity,
-        sales,
-        getAnthropicComparableMatchProvider(),
-      );
+      const classification = await classifyComparableSales(identity, sales, matchProvider);
+      classifiedSales = classification.sales;
+      await completeMatchClassificationRun({
+        runId,
+        outcome: 'succeeded',
+        inputTokens: classification.usage?.inputTokens,
+        outputTokens: classification.usage?.outputTokens,
+        response: classification.response,
+      });
     } catch (error) {
       // Classification is a best-effort pre-pass, never a blocker -- import
       // proceeds with everything included and unreasoned if it fails for
-      // any reason (missing key, network error, bad response).
+      // any reason (missing key, network error, bad response). Still logged
+      // as a failed run so it shows in the Build log and isn't a silent gap.
+      await completeMatchClassificationRun({
+        runId,
+        outcome: 'failed',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
       console.error(
         'Comparable-sales match classification failed, importing without it',
         error instanceof Error ? error.name : 'UnknownError',

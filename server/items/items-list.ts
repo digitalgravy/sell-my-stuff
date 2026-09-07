@@ -1,3 +1,5 @@
+import { usdToGbp } from '@/server/ai/pricing';
+
 import type { ItemDetail, ItemDetailFact } from './item-detail-repository';
 import type { ItemStatusValue } from './research-repository';
 
@@ -13,7 +15,8 @@ export interface ItemListEntry {
   pillLabel: string;
   /** Short line shown under the pill -- e.g. the first required task's title, or a stage label. Undefined when the pill alone is the whole story (READY, or AT AUCTION with no recorded end time). */
   detail?: string;
-  buyItNowPrice?: number;
+  /** The recommended Buy-It-Now price minus AI research cost so far -- before marketplace fees, which aren't modelled yet. */
+  estimatedProfit?: number;
 }
 
 const PILL_LABEL: Record<ItemListPill, string> = {
@@ -79,6 +82,9 @@ export function buildItemListEntry(detail: ItemDetail): ItemListEntry {
     pill,
     pillLabel: PILL_LABEL[pill],
     detail: itemDetail,
-    buyItNowPrice: detail.pricing?.buyItNowPrice,
+    estimatedProfit:
+      detail.pricing === undefined
+        ? undefined
+        : detail.pricing.buyItNowPrice - usdToGbp(detail.aiCostUsd),
   };
 }

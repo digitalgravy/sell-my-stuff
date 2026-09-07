@@ -18,6 +18,7 @@ function detail(overrides: Partial<ItemDetail>): ItemDetail {
     facts: [],
     phases: [],
     attention: [],
+    aiCostUsd: 0,
     buildSteps: [],
     ...overrides,
   };
@@ -100,7 +101,28 @@ void test('buildItemListEntry: pricing with nothing required is ready', () => {
     }),
   );
   assert.equal(entry.pill, 'ready');
-  assert.equal(entry.buyItNowPrice, 21.99);
+  assert.equal(entry.estimatedProfit, 21.99);
+});
+
+void test('buildItemListEntry: estimatedProfit nets out AI research cost', () => {
+  const entry = buildItemListEntry(
+    detail({
+      status: 'RESEARCHING',
+      aiCostUsd: 1,
+      pricing: {
+        likelyAchievedLow: 10,
+        likelyAchievedHigh: 20,
+        buyItNowPrice: 21.99,
+        acceptOffersLow: 15,
+        acceptOffersHigh: 20,
+        quickSalePrice: 10,
+        autoDeclineBelow: 9,
+        confidence: 'high',
+        evidenceCount: 5,
+      },
+    }),
+  );
+  assert.equal(entry.estimatedProfit, 21.99 - 0.79);
 });
 
 void test('buildItemListEntry: no pricing and nothing required falls back to a stage label', () => {

@@ -37,7 +37,11 @@ class MemoryJobRepository implements ResearchJobRepository {
     this.savedFacts.push(...facts);
   }
 
-  async logIdentificationRun() {}
+  async startIdentificationRun() {
+    return { runId: 'run-unused' };
+  }
+
+  async completeIdentificationRun() {}
 
   async markPhotosInspected() {}
 

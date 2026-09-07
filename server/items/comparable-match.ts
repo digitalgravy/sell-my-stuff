@@ -5,6 +5,13 @@ import type {
 
 import type { ComparableSale } from './item-detail-repository';
 
+export interface ClassifyComparableSalesResult {
+  sales: ComparableSale[];
+  /** Absent only when there was nothing to classify (no provider call made). */
+  usage?: { inputTokens: number; outputTokens: number };
+  response?: unknown;
+}
+
 /**
  * Import-time match classification -- per BRIEF.md's "LLMs interpret
  * evidence; deterministic code performs the maths", this is the one place
@@ -18,19 +25,21 @@ export async function classifyComparableSales(
   identity: IdentityFactsForMatching,
   sales: ComparableSale[],
   provider: ComparableMatchProvider,
-): Promise<ComparableSale[]> {
-  if (sales.length === 0) return sales;
+): Promise<ClassifyComparableSalesResult> {
+  if (sales.length === 0) return { sales };
 
-  const { result } = await provider.classify(
+  const { result, usage } = await provider.classify(
     identity,
     sales.map((sale) => ({ title: sale.title, match: sale.match })),
   );
 
-  return sales.map((sale, index) => {
+  const classified = sales.map((sale, index) => {
     const verdict = result.listings.find((listing) => listing.index === index);
     if (!verdict || verdict.isMatch) return sale;
     return { ...sale, excluded: true, excludedReason: verdict.reason };
   });
+
+  return { sales: classified, usage, response: result };
 }
 
 function readFactString(facts: { field: string; value: string }[], field: string): string | undefined {

@@ -47,6 +47,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { usdToGbp } from '@/server/ai/pricing';
 import type {
   AttentionTask,
   ItemDetail,
@@ -429,11 +430,11 @@ export function ItemDetailView({
                     <h2 className="text-lg font-semibold tracking-[-0.03em]">
                       Build log
                     </h2>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm tabular-nums text-muted-foreground">
                       {detail.buildSteps.length} step
                       {detail.buildSteps.length === 1 ? '' : 's'} ·{' '}
                       {detail.buildSteps.filter((step) => step.outcome === 'succeeded').length}{' '}
-                      succeeded
+                      succeeded · ~${detail.aiCostUsd.toFixed(2)} in AI calls
                     </p>
                   </div>
                   <div className="mt-5">
@@ -650,6 +651,11 @@ function DecisionCard({
         {pricing.evidenceWindowDays
           ? ` in the last ${pricing.evidenceWindowDays} days`
           : ''}
+      </p>
+      <p className="mt-1 text-sm tabular-nums text-muted-foreground">
+        Estimated profit after AI research cost £
+        {(pricing.buyItNowPrice - usdToGbp(detail.aiCostUsd)).toFixed(2)} (research cost ~£
+        {usdToGbp(detail.aiCostUsd).toFixed(2)}, before marketplace fees)
       </p>
 
       <div className="mt-5 grid grid-cols-3 gap-3">
@@ -1051,6 +1057,12 @@ function ListingTab({ detail }: { detail: ItemDetail }) {
   );
 }
 
+// eBay condition text ("Brand new") should read as one line; a hyphenated
+// clause ("Opened - never used") is fine to wrap at the hyphen's spaces.
+function keepOnOneLineUnlessHyphenated(text: string): string {
+  return text.includes('-') ? text : text.replace(/ /g, '\u00A0');
+}
+
 function EvidenceTab({
   detail,
   itemId,
@@ -1167,22 +1179,21 @@ function EvidenceTab({
                       className="size-4 accent-primary"
                     />
                   </TableCell>
-                  <TableCell
-                    className={cn(
-                      'whitespace-normal break-words',
-                      sale.excluded && 'line-through',
-                    )}
-                  >
-                    {sale.title}
+                  <TableCell className="whitespace-normal break-words">
+                    <span className={cn(sale.excluded && 'line-through')}>{sale.title}</span>
                     {sale.excluded && sale.excludedReason ? (
-                      <span className="mt-0.5 block text-xs text-muted-foreground no-underline">
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
                         {sale.excludedReason}
                       </span>
                     ) : null}
                   </TableCell>
-                  <TableCell className="whitespace-normal text-xs">{sale.match}</TableCell>
-                  <TableCell className="text-xs tabular-nums">{sale.soldAt}</TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="whitespace-normal text-xs">
+                    {keepOnOneLineUnlessHyphenated(sale.match)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs tabular-nums">
+                    {sale.soldAt}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
                     £{sale.price.toFixed(2)}
                   </TableCell>
                 </TableRow>

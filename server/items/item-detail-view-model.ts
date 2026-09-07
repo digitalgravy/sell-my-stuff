@@ -1,4 +1,6 @@
+import { MATCH_SYSTEM_PROMPT } from '@/server/ai/anthropic-comparable-match-provider';
 import { SYSTEM_PROMPT } from '@/server/ai/anthropic-vision-provider';
+import { estimateCostUsd } from '@/server/ai/pricing';
 
 import { summarizeError } from './homepage-snapshot';
 import type { AttentionTask, BuildStep, PhaseInfo } from './item-detail-repository';
@@ -152,13 +154,20 @@ export interface RunForBuildStep {
   attempt: number;
   provider: string;
   model: string;
-  outcome: 'succeeded' | 'failed';
+  /** Absent (pending) between the row being written and a response coming back. */
+  outcome?: 'succeeded' | 'failed';
   inputTokens?: number;
   outputTokens?: number;
   response?: unknown;
   errorMessage?: string;
   startedAt: string;
-  completedAt: string;
+  completedAt?: string;
+}
+
+function costMeta(model: string, inputTokens?: number, outputTokens?: number): string {
+  const tokenPart = `${inputTokens ?? 0} input · ${outputTokens ?? 0} output tokens`;
+  const costUsd = estimateCostUsd(model, inputTokens, outputTokens);
+  return costUsd === undefined ? tokenPart : `${tokenPart} · ~$${costUsd.toFixed(3)}`;
 }
 
 /**
@@ -166,6 +175,8 @@ export interface RunForBuildStep {
  * there is only one stage today (see PROJECT_STATUS.md's technical debt:
  * no second job type exists yet). The system prompt shown is the real,
  * exported SYSTEM_PROMPT constant the run actually used, not a paraphrase.
+ * A row with no outcome yet is a real in-flight request, shown as pending
+ * rather than waiting silently for it to resolve.
  */
 export function buildStepsFromRuns(
   runs: RunForBuildStep[],
@@ -173,19 +184,25 @@ export function buildStepsFromRuns(
 ): BuildStep[] {
   return runs.map((run) => {
     const candidateCount = countCandidates(run.response);
+    const detail =
+      run.outcome === 'succeeded'
+        ? `Vision model turn · attempt ${run.attempt} · ${candidateCount} candidate${candidateCount === 1 ? '' : 's'}`
+        : run.outcome === 'failed'
+          ? `Vision model turn · attempt ${run.attempt} · failed`
+          : `Vision model turn · attempt ${run.attempt} · submitted, waiting for a response`;
     return {
       id: run.id,
       stage: 'Identify item',
-      detail:
-        run.outcome === 'succeeded'
-          ? `Vision model turn · attempt ${run.attempt} · ${candidateCount} candidate${candidateCount === 1 ? '' : 's'}`
-          : `Vision model turn · attempt ${run.attempt} · failed`,
+      detail,
       type: 'llm',
-      outcome: run.outcome,
-      durationMs: Math.max(
-        0,
-        new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(),
-      ),
+      outcome: run.outcome ?? 'pending',
+      durationMs:
+        run.outcome === undefined || !run.completedAt
+          ? 0
+          : Math.max(
+              0,
+              new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(),
+            ),
       blocks: [
         {
           label: 'System prompt',
@@ -197,16 +214,79 @@ export function buildStepsFromRuns(
           meta: `${photoCount} photo${photoCount === 1 ? '' : 's'}`,
           content: 'Identify the item shown in these photographs.',
         },
-        run.outcome === 'succeeded'
-          ? {
-              label: 'Assistant response',
-              meta: `${run.inputTokens ?? 0} input · ${run.outputTokens ?? 0} output tokens`,
-              content: JSON.stringify(run.response, null, 2),
-            }
-          : {
-              label: 'Error',
-              content: run.errorMessage ?? 'Unknown error',
-            },
+        ...(run.outcome === 'succeeded'
+          ? [
+              {
+                label: 'Assistant response',
+                meta: costMeta(run.model, run.inputTokens, run.outputTokens),
+                content: JSON.stringify(run.response, null, 2),
+              },
+            ]
+          : run.outcome === 'failed'
+            ? [{ label: 'Error', content: run.errorMessage ?? 'Unknown error' }]
+            : [{ label: 'Waiting', content: 'No response from Anthropic yet.' }]),
+      ],
+    };
+  });
+}
+
+export interface MatchRunForBuildStep {
+  id: string;
+  provider: string;
+  model: string;
+  listingCount: number;
+  outcome?: 'succeeded' | 'failed';
+  inputTokens?: number;
+  outputTokens?: number;
+  errorMessage?: string;
+  startedAt: string;
+  completedAt?: string;
+}
+
+/**
+ * Every real match_classification_runs row becomes exactly one build step,
+ * the same pending/resolved shape as buildStepsFromRuns -- one call judges
+ * every imported listing at once (see server/items/comparable-match.ts),
+ * so one row is one build step regardless of how many listings it covered.
+ */
+export function buildStepsFromMatchRuns(runs: MatchRunForBuildStep[]): BuildStep[] {
+  return runs.map((run) => {
+    const detail =
+      run.outcome === 'succeeded'
+        ? `Match classification · ${run.listingCount} listing${run.listingCount === 1 ? '' : 's'} checked`
+        : run.outcome === 'failed'
+          ? `Match classification · ${run.listingCount} listing${run.listingCount === 1 ? '' : 's'} · failed`
+          : `Match classification · ${run.listingCount} listing${run.listingCount === 1 ? '' : 's'} · submitted, waiting for a response`;
+    return {
+      id: run.id,
+      stage: 'Check evidence matches',
+      detail,
+      type: 'llm',
+      outcome: run.outcome ?? 'pending',
+      durationMs:
+        run.outcome === undefined || !run.completedAt
+          ? 0
+          : Math.max(
+              0,
+              new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(),
+            ),
+      blocks: [
+        {
+          label: 'System prompt',
+          meta: `${run.provider} · ${run.model}`,
+          content: MATCH_SYSTEM_PROMPT,
+        },
+        ...(run.outcome === 'succeeded'
+          ? [
+              {
+                label: 'Assistant response',
+                meta: costMeta(run.model, run.inputTokens, run.outputTokens),
+                content: `Classified ${run.listingCount} listing${run.listingCount === 1 ? '' : 's'}.`,
+              },
+            ]
+          : run.outcome === 'failed'
+            ? [{ label: 'Error', content: run.errorMessage ?? 'Unknown error' }]
+            : [{ label: 'Waiting', content: 'No response from Anthropic yet.' }]),
       ],
     };
   });

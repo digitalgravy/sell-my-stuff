@@ -64,6 +64,13 @@
       "when": 1788786368926,
       "tag": "0008_certain_fixer",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788789348175,
+      "tag": "0009_spotty_kree",
+      "breakpoints": true
     }
   ]
 }

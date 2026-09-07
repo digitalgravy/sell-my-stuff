@@ -413,6 +413,7 @@ export function buildSampleItemDetail(): ItemDetail {
       fairValue: 142,
       note: '12 sold listings reviewed over the last 90 days; 2 excluded as mismatched model variants (XM3, XM5).',
     },
+    aiCostUsd: 0.04,
     buildSteps: BUILD_STEPS,
   };
 }

@@ -43,12 +43,13 @@ void test('classifyComparableSales excludes only the listings the provider marks
   });
 
   const sales = [sale('Widget A2374'), sale('Widget A2374 bundle with case'), sale('Widget A2374 white')];
-  const result = await classifyComparableSales({}, sales, provider);
+  const { sales: result, usage } = await classifyComparableSales({}, sales, provider);
 
   assert.equal(result[0]?.excluded, undefined);
   assert.equal(result[1]?.excluded, true);
   assert.equal(result[1]?.excludedReason, 'Bundle with accessories');
   assert.equal(result[2]?.excluded, undefined);
+  assert.deepEqual(usage, { inputTokens: 100, outputTokens: 50 });
 });
 
 void test('classifyComparableSales sends title and condition, not price or date, to the provider', async () => {
@@ -67,7 +68,7 @@ void test('classifyComparableSales leaves a listing untouched when the provider 
     result: { listings: [] },
     usage: { inputTokens: 10, outputTokens: 5 },
   });
-  const result = await classifyComparableSales({}, [sale('Widget')], provider);
+  const { sales: result } = await classifyComparableSales({}, [sale('Widget')], provider);
   assert.equal(result[0]?.excluded, undefined);
 });
 
@@ -77,7 +78,8 @@ void test('classifyComparableSales returns an empty array without calling the pr
     usage: { inputTokens: 0, outputTokens: 0 },
   });
   const result = await classifyComparableSales({}, [], provider);
-  assert.deepEqual(result, []);
+  assert.deepEqual(result.sales, []);
+  assert.equal(result.usage, undefined);
   assert.equal(provider.received, undefined);
 });
 

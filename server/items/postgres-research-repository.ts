@@ -8,7 +8,8 @@ import { getDatabase } from '@/server/db/client';
 import type {
   ClaimedJob,
   IdentificationFactInput,
-  IdentificationRunLogInput,
+  IdentificationRunCompleteInput,
+  IdentificationRunStartInput,
   ItemPhotoForResearch,
   ItemStatusValue,
   ResearchJobRepository,
@@ -121,23 +122,36 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
       });
   }
 
-  async logIdentificationRun(entry: IdentificationRunLogInput): Promise<void> {
+  async startIdentificationRun(
+    entry: IdentificationRunStartInput,
+  ): Promise<{ runId: string }> {
     const database = getDatabase();
+    const id = randomUUID();
     await database.insert(identificationRuns).values({
-      id: randomUUID(),
+      id,
       itemId: entry.itemId,
       jobId: entry.jobId,
       attempt: entry.attempt,
       provider: entry.provider,
       model: entry.model,
-      outcome: entry.outcome,
-      inputTokens: entry.inputTokens,
-      outputTokens: entry.outputTokens,
-      response: entry.response,
-      errorMessage: entry.errorMessage,
       startedAt: entry.startedAt,
-      completedAt: entry.completedAt,
     });
+    return { runId: id };
+  }
+
+  async completeIdentificationRun(entry: IdentificationRunCompleteInput): Promise<void> {
+    const database = getDatabase();
+    await database
+      .update(identificationRuns)
+      .set({
+        outcome: entry.outcome,
+        inputTokens: entry.inputTokens,
+        outputTokens: entry.outputTokens,
+        response: entry.response,
+        errorMessage: entry.errorMessage,
+        completedAt: entry.completedAt,
+      })
+      .where(eq(identificationRuns.id, entry.runId));
   }
 
   async markPhotosInspected(photoIds: string[]): Promise<void> {

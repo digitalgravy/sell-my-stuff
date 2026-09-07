@@ -9,10 +9,12 @@ import {
   itemFacts,
   items,
   jobs,
+  matchClassificationRuns,
   photos,
   researchCaptures,
 } from '@/db/schema';
 import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-comparable-match-provider';
+import { estimateCostUsd } from '@/server/ai/pricing';
 import { getDatabase } from '@/server/db/client';
 import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from '@/server/jobs/research-comparable-sales-job';
@@ -35,11 +37,16 @@ import type {
 import {
   buildStepsFromCorrections,
   buildStepsFromImports,
+  buildStepsFromMatchRuns,
   buildStepsFromResearchJobs,
   buildStepsFromRuns,
   deriveAttention,
   derivePhases,
 } from './item-detail-view-model';
+import {
+  completeMatchClassificationRun,
+  startMatchClassificationRun,
+} from './match-classification-runs';
 
 const IDENTITY_FACT_FIELDS = new Set([
   'identity.item_type',
@@ -69,6 +76,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       photoRows,
       factRows,
       runRows,
+      matchRunRows,
       [job],
       comparableSaleRows,
       importRows,
@@ -109,6 +117,22 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .from(identificationRuns)
         .where(eq(identificationRuns.itemId, itemId))
         .orderBy(desc(identificationRuns.startedAt)),
+      database
+        .select({
+          id: matchClassificationRuns.id,
+          provider: matchClassificationRuns.provider,
+          model: matchClassificationRuns.model,
+          listingCount: matchClassificationRuns.listingCount,
+          outcome: matchClassificationRuns.outcome,
+          inputTokens: matchClassificationRuns.inputTokens,
+          outputTokens: matchClassificationRuns.outputTokens,
+          errorMessage: matchClassificationRuns.errorMessage,
+          startedAt: matchClassificationRuns.startedAt,
+          completedAt: matchClassificationRuns.completedAt,
+        })
+        .from(matchClassificationRuns)
+        .where(eq(matchClassificationRuns.itemId, itemId))
+        .orderBy(desc(matchClassificationRuns.startedAt)),
       database
         .select({ state: jobs.state, lastError: jobs.lastError })
         .from(jobs)
@@ -191,13 +215,16 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       position: row.position,
     }));
 
-    // Four independent sources of build-log entries (identification runs,
-    // comparable-sales imports, eBay-search-link jobs, fact corrections)
-    // merged into one chronological list -- each timestamped record keeps
-    // the source it came from so the right builder function turns it into
-    // a BuildStep.
+    // Five independent sources of build-log entries (identification runs,
+    // match-classification runs, comparable-sales imports, eBay-search-link
+    // jobs, fact corrections) merged into one chronological list -- each
+    // timestamped record keeps the source it came from so the right
+    // builder function turns it into a BuildStep. A pending run (no
+    // completedAt yet) sorts by its startedAt like everything else, so it
+    // naturally appears at the top while in flight.
     const timestampedSteps = [
       ...runRows.map((row) => ({ at: row.startedAt, kind: 'run' as const, row })),
+      ...matchRunRows.map((row) => ({ at: row.startedAt, kind: 'matchRun' as const, row })),
       ...importRows.map((row) => ({ at: row.importedAt!, kind: 'import' as const, row })),
       ...researchJobRows
         .filter((row) => row.state === 'SUCCEEDED' || row.state === 'FAILED')
@@ -215,17 +242,32 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
                 attempt: entry.row.attempt,
                 provider: entry.row.provider,
                 model: entry.row.model,
-                outcome: entry.row.outcome,
+                outcome: entry.row.outcome ?? undefined,
                 inputTokens: entry.row.inputTokens ?? undefined,
                 outputTokens: entry.row.outputTokens ?? undefined,
                 response: entry.row.response ?? undefined,
                 errorMessage: entry.row.errorMessage ?? undefined,
                 startedAt: entry.row.startedAt.toISOString(),
-                completedAt: entry.row.completedAt.toISOString(),
+                completedAt: entry.row.completedAt?.toISOString(),
               },
             ],
             photoRows.length,
           );
+        case 'matchRun':
+          return buildStepsFromMatchRuns([
+            {
+              id: entry.row.id,
+              provider: entry.row.provider,
+              model: entry.row.model,
+              listingCount: entry.row.listingCount,
+              outcome: entry.row.outcome ?? undefined,
+              inputTokens: entry.row.inputTokens ?? undefined,
+              outputTokens: entry.row.outputTokens ?? undefined,
+              errorMessage: entry.row.errorMessage ?? undefined,
+              startedAt: entry.row.startedAt.toISOString(),
+              completedAt: entry.row.completedAt?.toISOString(),
+            },
+          ]);
         case 'import':
           return buildStepsFromImports([
             {
@@ -260,6 +302,23 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       }
     });
 
+    // What this item has cost so far in Anthropic API spend across both
+    // call types (identification, match classification) -- a real,
+    // measured cost that nets against the estimated sale price, not a
+    // fabricated marketplace-fee figure. Pending/failed runs with no
+    // token counts contribute 0, not undefined, so this always sums cleanly.
+    const aiCostUsd =
+      runRows.reduce(
+        (total, row) =>
+          total + (estimateCostUsd(row.model, row.inputTokens ?? undefined, row.outputTokens ?? undefined) ?? 0),
+        0,
+      ) +
+      matchRunRows.reduce(
+        (total, row) =>
+          total + (estimateCostUsd(row.model, row.inputTokens ?? undefined, row.outputTokens ?? undefined) ?? 0),
+        0,
+      );
+
     return {
       id: item.id,
       status: item.status,
@@ -285,6 +344,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       }),
       evidence: comparableSaleList.length > 0 ? buildEvidence(comparableSaleList) : undefined,
       pricing: computeValuation(comparableSaleList),
+      aiCostUsd,
       buildSteps,
     };
   }
@@ -390,14 +450,35 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     if (saleRows.length === 0) return { ok: false, reason: 'No comparable sales to re-check' };
 
     const identity = buildIdentityFactsForMatching(identityFactRows);
-    const classified = await classifyComparableSales(
-      identity,
-      saleRows,
-      getAnthropicComparableMatchProvider(),
-    );
+    const matchProvider = getAnthropicComparableMatchProvider();
+    const { runId } = await startMatchClassificationRun({
+      itemId,
+      provider: matchProvider.provider,
+      model: matchProvider.model,
+      listingCount: saleRows.length,
+    });
+
+    let classification;
+    try {
+      classification = await classifyComparableSales(identity, saleRows, matchProvider);
+    } catch (error) {
+      await completeMatchClassificationRun({
+        runId,
+        outcome: 'failed',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
+    await completeMatchClassificationRun({
+      runId,
+      outcome: 'succeeded',
+      inputTokens: classification.usage?.inputTokens,
+      outputTokens: classification.usage?.outputTokens,
+      response: classification.response,
+    });
 
     await database.transaction(async (tx) => {
-      for (const sale of classified) {
+      for (const sale of classification.sales) {
         await tx
           .update(comparableSales)
           .set({ excluded: sale.excluded ?? false, excludedReason: sale.excludedReason ?? null })

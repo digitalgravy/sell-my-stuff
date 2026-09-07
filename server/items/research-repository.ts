@@ -29,19 +29,23 @@ export interface IdentificationFactInput {
 
 export type IdentificationRunOutcome = 'succeeded' | 'failed';
 
-export interface IdentificationRunLogInput {
+export interface IdentificationRunStartInput {
   itemId: string;
   jobId: string;
   attempt: number;
   provider: string;
   model: string;
+  startedAt: Date;
+}
+
+export interface IdentificationRunCompleteInput {
+  runId: string;
   outcome: IdentificationRunOutcome;
   inputTokens?: number;
   outputTokens?: number;
   /** The full raw identification result (every candidate, not just the leading one) — present only on success. */
   response?: unknown;
   errorMessage?: string;
-  startedAt: Date;
   completedAt: Date;
 }
 
@@ -73,7 +77,9 @@ export interface ResearchJobRepository {
     itemId: string,
     facts: IdentificationFactInput[],
   ): Promise<void>;
-  logIdentificationRun(entry: IdentificationRunLogInput): Promise<void>;
+  /** Logged before the request goes to Anthropic, so the Build log can show a pending entry. */
+  startIdentificationRun(entry: IdentificationRunStartInput): Promise<{ runId: string }>;
+  completeIdentificationRun(entry: IdentificationRunCompleteInput): Promise<void>;
   markPhotosInspected(photoIds: string[]): Promise<void>;
   transitionItemStatus(itemId: string, status: ItemStatusValue): Promise<void>;
   completeJob(jobId: string, progress: number): Promise<void>;

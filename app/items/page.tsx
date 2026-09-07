@@ -42,7 +42,7 @@ const FILTERS: { value: FilterValue; label: string }[] = [
 const SORT_LABEL: Record<SortColumn, string> = {
   title: 'Item',
   status: 'Status',
-  price: 'Suggested price',
+  price: 'Estimated profit',
   updated: 'Updated',
 };
 
@@ -112,7 +112,7 @@ export default function ItemsPage() {
         case 'status':
           return direction * (PILL_SORT_RANK[a.pill] - PILL_SORT_RANK[b.pill]);
         case 'price':
-          return direction * ((a.buyItNowPrice ?? -1) - (b.buyItNowPrice ?? -1));
+          return direction * ((a.estimatedProfit ?? -1) - (b.estimatedProfit ?? -1));
         case 'updated':
           return direction * (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
       }
@@ -269,8 +269,8 @@ export default function ItemsPage() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         <Link href={`/items/${item.id}`} className="block">
-                          {item.buyItNowPrice !== undefined
-                            ? formatGBP(item.buyItNowPrice)
+                          {item.estimatedProfit !== undefined
+                            ? formatGBP(item.estimatedProfit)
                             : '—'}
                         </Link>
                       </TableCell>

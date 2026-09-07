@@ -73,15 +73,20 @@ function BuildStepEntry({
         </span>
         <span className="flex shrink-0 items-center gap-2.5 text-xs text-muted-foreground">
           <Badge
-            variant={step.outcome === 'succeeded' ? 'secondary' : 'destructive'}
+            variant={step.outcome === 'failed' ? 'destructive' : 'secondary'}
             className={cn(
               'border-transparent',
               step.outcome === 'succeeded' && 'bg-success-soft text-success',
+              step.outcome === 'pending' && 'bg-primary/10 text-primary',
             )}
           >
-            {step.outcome === 'succeeded' ? 'Succeeded' : 'Failed'}
+            {step.outcome === 'succeeded'
+              ? 'Succeeded'
+              : step.outcome === 'pending'
+                ? 'Pending'
+                : 'Failed'}
           </Badge>
-          {(step.durationMs / 1000).toFixed(1)}s
+          {step.outcome === 'pending' ? null : `${(step.durationMs / 1000).toFixed(1)}s`}
         </span>
       </summary>
       <div className="mt-3 pl-[2.4rem]">

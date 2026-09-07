@@ -9,7 +9,6 @@ import type {
 } from '@/server/ai/vision-provider';
 import type {
   IdentificationFactInput,
-  IdentificationRunLogInput,
   ResearchJobRepository,
 } from '@/server/items/research-repository';
 import type { ObjectStore } from '@/server/storage/object-store';
@@ -50,16 +49,6 @@ export async function runInspectImagesJob(
   );
   if (!job) return { claimed: false };
 
-  const startedAt = dependencies.now?.() ?? new Date();
-  const runLogBase = {
-    itemId: job.itemId,
-    jobId: job.id,
-    attempt: job.attempt,
-    provider: dependencies.vision.provider,
-    model: dependencies.vision.model,
-    startedAt,
-  } satisfies Partial<IdentificationRunLogInput>;
-
   try {
     await dependencies.jobs.transitionItemStatus(job.itemId, 'IDENTIFYING');
 
@@ -80,7 +69,22 @@ export async function runInspectImagesJob(
       }),
     );
 
-    const outcome = await dependencies.vision.identify(photosForIdentification);
+    // Logged as pending right before the request goes to Anthropic (so the
+    // Build log has something to show while it's in flight) and resolved
+    // the moment a response or error comes back -- independently of
+    // whatever happens afterwards (saving facts, transitioning status),
+    // so a real, paid-for API call is never mis-recorded as failed just
+    // because a later, unrelated step throws.
+    const { runId } = await dependencies.jobs.startIdentificationRun({
+      itemId: job.itemId,
+      jobId: job.id,
+      attempt: job.attempt,
+      provider: dependencies.vision.provider,
+      model: dependencies.vision.model,
+      startedAt: dependencies.now?.() ?? new Date(),
+    });
+
+    const outcome = await identifyAndLog(dependencies, runId, photosForIdentification);
     const leading = [...outcome.result.candidates].sort(
       (a, b) => b.confidence - a.confidence,
     )[0];
@@ -93,14 +97,6 @@ export async function runInspectImagesJob(
     await dependencies.jobs.markPhotosInspected(
       photos.map((photo) => photo.id),
     );
-    await dependencies.jobs.logIdentificationRun({
-      ...runLogBase,
-      outcome: 'succeeded',
-      inputTokens: outcome.usage.inputTokens,
-      outputTokens: outcome.usage.outputTokens,
-      response: outcome.result,
-      completedAt: dependencies.now?.() ?? new Date(),
-    });
 
     const needsInformation =
       leading.confidence < IDENTIFICATION_CONFIDENCE_THRESHOLD ||
@@ -128,16 +124,45 @@ export async function runInspectImagesJob(
         ? new Date(now.getTime() + retryDelayMs(job.attempt))
         : undefined;
     await dependencies.jobs.failJob(job.id, message, outcome, retryAt);
-    await dependencies.jobs.logIdentificationRun({
-      ...runLogBase,
-      outcome: 'failed',
-      errorMessage: message,
-      completedAt: now,
-    });
     if (outcome === 'FAILED') {
       await dependencies.jobs.transitionItemStatus(job.itemId, 'FAILED');
     }
     return { claimed: true, itemId: job.itemId, outcome: 'failed' };
+  }
+}
+
+/**
+ * Calls the vision model and resolves its pending identification_runs row
+ * with the real outcome -- success with token usage, or failure with the
+ * error -- then rethrows on failure so the caller's own job-retry handling
+ * still applies. Isolated from downstream steps (saving facts, etc.) on
+ * purpose: those can fail independently without this row's cost record
+ * being overwritten or lost.
+ */
+async function identifyAndLog(
+  dependencies: InspectImagesJobDependencies,
+  runId: string,
+  photos: PhotoForIdentification[],
+) {
+  try {
+    const outcome = await dependencies.vision.identify(photos);
+    await dependencies.jobs.completeIdentificationRun({
+      runId,
+      outcome: 'succeeded',
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+      response: outcome.result,
+      completedAt: dependencies.now?.() ?? new Date(),
+    });
+    return outcome;
+  } catch (error) {
+    await dependencies.jobs.completeIdentificationRun({
+      runId,
+      outcome: 'failed',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      completedAt: dependencies.now?.() ?? new Date(),
+    });
+    throw error;
   }
 }
 

@@ -267,18 +267,56 @@ export const identificationRuns = pgTable(
     attempt: integer('attempt').notNull(),
     provider: text('provider').notNull(),
     model: text('model').notNull(),
-    outcome: identificationRunOutcome('outcome').notNull(),
+    // Null between the row being written (right before the request goes to
+    // Anthropic) and the response coming back -- lets the Build log show a
+    // real "submitted, waiting" entry instead of only ever seeing a call
+    // after the fact. completedAt is null on the same window.
+    outcome: identificationRunOutcome('outcome'),
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
     response: jsonb('response'),
     errorMessage: text('error_message'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
-    completedAt: timestamp('completed_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
     index('identification_runs_item_idx').on(table.itemId, table.createdAt),
+  ],
+);
+
+/**
+ * One row per comparable-match classification call (the LLM pass that
+ * decides which imported eBay listings are genuine comparable sales, see
+ * server/items/comparable-match.ts) -- the same pending/resolved and
+ * cost-tracking shape as identification_runs, so both AI call types show up
+ * in the Build log and roll up into the same per-item AI cost total.
+ */
+export const matchClassificationRuns = pgTable(
+  'match_classification_runs',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    listingCount: integer('listing_count').notNull(),
+    // Null while the request is in flight -- see identificationRuns.outcome.
+    outcome: identificationRunOutcome('outcome'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    response: jsonb('response'),
+    errorMessage: text('error_message'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('match_classification_runs_item_idx').on(table.itemId, table.createdAt),
   ],
 );
