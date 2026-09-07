@@ -64,11 +64,7 @@ void test('routes non-NEEDS_INFORMATION statuses into working with a stage label
   assert.equal(snapshot.attention.length, 0);
   assert.deepEqual(
     snapshot.working.map((item) => item.stage),
-    [
-      'Queued for identification',
-      'Identifying',
-      'Identified — research not yet available',
-    ],
+    ['Queued for identification', 'Identifying', 'Researched — ready to list'],
   );
 });
 

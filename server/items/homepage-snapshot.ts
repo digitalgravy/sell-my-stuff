@@ -135,7 +135,14 @@ export function buildHomepageSnapshot(
       working.push({
         id: row.id,
         title,
-        stage: WORKING_STAGE_LABEL[row.status] ?? row.status,
+        // A RESEARCHING item only reaches this branch (not the attention
+        // branch above) once it has evidence -- the static label would
+        // otherwise still claim "research not yet available" for an item
+        // that's actually ready.
+        stage:
+          row.status === 'RESEARCHING' && row.hasEvidence
+            ? 'Researched — ready to list'
+            : (WORKING_STAGE_LABEL[row.status] ?? row.status),
         updatedAt,
         activity: deriveActivityState(row),
       });
