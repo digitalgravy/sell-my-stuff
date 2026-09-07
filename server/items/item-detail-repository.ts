@@ -64,10 +64,19 @@ export interface AttentionTask {
 }
 
 export interface PricingAdvice {
+  /** The trimmed-outlier IQR of comparable sale prices actually used. */
+  likelyAchievedLow: number;
+  likelyAchievedHigh: number;
   buyItNowPrice: number;
-  basis: string;
-  acceptOffersRange: string;
+  acceptOffersLow: number;
+  acceptOffersHigh: number;
+  quickSalePrice: number;
   autoDeclineBelow: number;
+  confidence: 'high' | 'medium' | 'low';
+  /** How many comparable sales were actually used after excluding and trimming outliers. */
+  evidenceCount: number;
+  /** Present only when there were enough recent sales (see RECENT_WINDOW_DAYS) to use just those, rather than the full evidence set. */
+  evidenceWindowDays?: number;
 }
 
 export interface ListingStrategyOption {

@@ -603,27 +603,54 @@ function DecisionCard({
   const optional = detail.attention.filter((task) => !task.required);
   const ready = required.length === 0;
 
+  const confidenceBadgeClass =
+    pricing.confidence === 'high'
+      ? 'bg-success-soft text-success'
+      : pricing.confidence === 'medium'
+        ? 'bg-warning-soft text-warning'
+        : 'bg-muted text-muted-foreground';
+
   return (
     <div className="rounded-[1.75rem] border border-border/75 bg-card p-6">
-      <p className="text-sm font-medium text-muted-foreground">
-        Recommended Buy-It-Now price
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">
+            Recommended Buy-It-Now price
+          </p>
+          <p className="mt-1.5 font-display text-4xl font-semibold tracking-[-0.03em] tabular-nums">
+            £{pricing.buyItNowPrice.toFixed(2)}
+          </p>
+        </div>
+        <Badge className={cn('shrink-0 border-transparent capitalize', confidenceBadgeClass)}>
+          {pricing.confidence} confidence
+        </Badge>
+      </div>
+      <p className="mt-2.5 text-sm text-muted-foreground">
+        Likely achieved £{pricing.likelyAchievedLow.toFixed(2)}–£
+        {pricing.likelyAchievedHigh.toFixed(2)} · {pricing.evidenceCount} comparable sale
+        {pricing.evidenceCount === 1 ? '' : 's'}
+        {pricing.evidenceWindowDays
+          ? ` in the last ${pricing.evidenceWindowDays} days`
+          : ''}
       </p>
-      <p className="mt-1.5 font-display text-4xl font-semibold tracking-[-0.03em] tabular-nums">
-        ${pricing.buyItNowPrice}
-      </p>
-      <p className="mt-2.5 text-sm text-muted-foreground">{pricing.basis}</p>
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="mt-5 grid grid-cols-3 gap-3">
         <div className="rounded-2xl bg-muted/60 p-4">
           <p className="text-xs text-muted-foreground">Accept offers</p>
           <p className="mt-1 text-sm font-semibold tabular-nums">
-            {pricing.acceptOffersRange}
+            £{pricing.acceptOffersLow.toFixed(2)}–£{pricing.acceptOffersHigh.toFixed(2)}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-muted/60 p-4">
+          <p className="text-xs text-muted-foreground">Quick sale</p>
+          <p className="mt-1 text-sm font-semibold tabular-nums">
+            £{pricing.quickSalePrice.toFixed(2)}
           </p>
         </div>
         <div className="rounded-2xl bg-muted/60 p-4">
           <p className="text-xs text-muted-foreground">Auto-decline below</p>
           <p className="mt-1 text-sm font-semibold tabular-nums">
-            ${pricing.autoDeclineBelow}
+            £{pricing.autoDeclineBelow.toFixed(2)}
           </p>
         </div>
       </div>

@@ -12,30 +12,51 @@ import {
 
 void test('derivePhases marks Identified done only when identity facts actually exist', () => {
   assert.equal(
-    derivePhases({ status: 'INBOX', hasIdentityFacts: false }).find(
+    derivePhases({ status: 'INBOX', hasIdentityFacts: false, hasEvidence: false }).find(
       (p) => p.key === 'identified',
     )?.state,
     'not_started',
   );
   assert.equal(
-    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false }).find(
+    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasEvidence: false }).find(
       (p) => p.key === 'identified',
     )?.state,
     'pending',
   );
   assert.equal(
-    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true }).find(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasEvidence: false }).find(
       (p) => p.key === 'identified',
     )?.state,
     'done',
   );
 });
 
-void test('derivePhases never marks an unbuilt phase as done or pending', () => {
-  const phases = derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true });
-  const unbuilt = phases.filter((p) => p.key !== 'identified');
+void test('derivePhases never marks a genuinely unbuilt phase as done or pending', () => {
+  const phases = derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasEvidence: false });
+  const unbuilt = phases.filter((p) => p.key !== 'identified' && p.key !== 'researched');
   assert.ok(unbuilt.every((p) => p.state === 'not_started'));
-  assert.equal(unbuilt.length, 3);
+  assert.equal(unbuilt.length, 2);
+});
+
+void test('derivePhases marks Researched pending while status is RESEARCHING with no evidence yet, done once evidence exists', () => {
+  assert.equal(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasEvidence: false }).find(
+      (p) => p.key === 'researched',
+    )?.state,
+    'pending',
+  );
+  assert.equal(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasEvidence: true }).find(
+      (p) => p.key === 'researched',
+    )?.state,
+    'done',
+  );
+  assert.equal(
+    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasEvidence: false }).find(
+      (p) => p.key === 'researched',
+    )?.state,
+    'not_started',
+  );
 });
 
 void test('deriveAttention returns one required task per open question', () => {

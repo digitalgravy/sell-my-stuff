@@ -5,20 +5,28 @@ import type { AttentionTask, BuildStep, PhaseInfo } from './item-detail-reposito
 import type { ItemStatusValue } from './research-repository';
 
 /**
- * Only "Identified" reflects something real today — the other three phases
- * have no backing job type yet (see PROJECT_STATUS.md). Honesty over
- * completeness: a phase is only "done" when its own evidence (identity
- * facts existing) says so, never inferred from the item's lifecycle status
- * alone, and the unbuilt phases always read "not_started" rather than
- * guessing at progress that doesn't exist.
+ * "Identified" and "Researched" reflect something real; "Assessed" and
+ * "Draft ready" still have no backing job type (see PROJECT_STATUS.md).
+ * Honesty over completeness: a phase is only "done" when its own evidence
+ * (identity facts existing, comparable sales imported) says so, never
+ * inferred from the item's lifecycle status alone, and the unbuilt phases
+ * always read "not_started" rather than guessing at progress that doesn't
+ * exist.
  */
 export function derivePhases(input: {
   status: ItemStatusValue;
   hasIdentityFacts: boolean;
+  hasEvidence: boolean;
 }): PhaseInfo[] {
   const identifiedState = input.hasIdentityFacts
     ? 'done'
     : input.status === 'IDENTIFYING'
+      ? 'pending'
+      : 'not_started';
+
+  const researchedState = input.hasEvidence
+    ? 'done'
+    : input.status === 'RESEARCHING'
       ? 'pending'
       : 'not_started';
 
@@ -38,8 +46,12 @@ export function derivePhases(input: {
     {
       key: 'researched',
       label: 'Researched',
-      detail: 'Comparable-sales research not built yet',
-      state: 'not_started',
+      detail: input.hasEvidence
+        ? 'Comparable sales imported'
+        : researchedState === 'pending'
+          ? 'Ready to search eBay'
+          : 'Not yet researched',
+      state: researchedState,
     },
     {
       key: 'draft_ready',

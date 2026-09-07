@@ -17,6 +17,7 @@ import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from '@/server/jobs/research-comparable-sales-job';
 
 import { deriveActivityState } from './homepage-snapshot';
+import { computeValuation } from './valuation';
 import type {
   ComparableSale,
   CorrectFactOutcome,
@@ -262,7 +263,11 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       updatedAt: item.updatedAt.toISOString(),
       photos: photoList,
       facts,
-      phases: derivePhases({ status: item.status, hasIdentityFacts }),
+      phases: derivePhases({
+        status: item.status,
+        hasIdentityFacts,
+        hasEvidence: comparableSaleRows.length > 0,
+      }),
       attention: deriveAttention({
         status: item.status,
         openQuestions,
@@ -271,6 +276,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         hasEvidence: comparableSaleRows.length > 0,
       }),
       evidence: comparableSaleRows.length > 0 ? buildEvidence(comparableSaleRows) : undefined,
+      pricing: computeValuation(comparableSaleRows),
       buildSteps,
     };
   }

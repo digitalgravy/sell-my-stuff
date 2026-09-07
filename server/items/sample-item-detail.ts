@@ -350,11 +350,16 @@ export function buildSampleItemDetail(): ItemDetail {
       },
     ],
     pricing: {
-      buyItNowPrice: 149,
-      basis:
-        'Based on 12 comparable sold listings on eBay in the last 90 days, adjusted -6% for light cosmetic wear and the missing retail box.',
-      acceptOffersRange: '$120–$145',
+      likelyAchievedLow: 120,
+      likelyAchievedHigh: 145,
+      buyItNowPrice: 149.99,
+      acceptOffersLow: 132,
+      acceptOffersHigh: 142,
+      quickSalePrice: 120,
       autoDeclineBelow: 108,
+      confidence: 'high',
+      evidenceCount: 12,
+      evidenceWindowDays: 90,
     },
     listing: {
       title: 'Sony WH-1000XM4 Wireless Noise Cancelling Headphones - Black',
