@@ -247,6 +247,7 @@ void test('claims a queued job, saves facts and marks the item researching', asy
       },
     ],
     openQuestions: [],
+    canSearchEbayConfidently: true,
   });
 
   const result = await runInspectImagesJob({ jobs, objectStore, vision });
@@ -295,6 +296,7 @@ void test('skips condition assessment entirely when no condition provider is con
       { itemType: 'wireless keyboard', confidence: 0.92, evidence: 'Apple logo visible' },
     ],
     openQuestions: [],
+    canSearchEbayConfidently: true,
   });
 
   await runInspectImagesJob({ jobs, objectStore, vision });
@@ -312,6 +314,7 @@ void test('runs condition assessment alongside identification and saves conditio
       { itemType: 'wireless keyboard', confidence: 0.92, evidence: 'Apple logo visible' },
     ],
     openQuestions: [],
+    canSearchEbayConfidently: true,
   });
   const condition = new StubConditionProvider({
     overallGrade: { grade: 'very_good', confidence: 0.9, evidence: 'Minor scuffs on the base' },
@@ -351,6 +354,7 @@ void test('a low-confidence or questioning condition assessment does not block r
       { itemType: 'wireless keyboard', confidence: 0.95, evidence: 'Apple logo visible' },
     ],
     openQuestions: [],
+    canSearchEbayConfidently: true,
   });
   const condition = new StubConditionProvider({
     overallGrade: { grade: 'good', confidence: 0.4, evidence: 'Hard to tell wear level from the angle shown' },
@@ -382,6 +386,7 @@ void test('a failing condition provider fails the whole inspect_images job', asy
       { itemType: 'wireless keyboard', confidence: 0.95, evidence: 'Apple logo visible' },
     ],
     openQuestions: [],
+    canSearchEbayConfidently: true,
   });
   const condition = new StubConditionProvider(new Error('condition provider timed out'));
 
@@ -422,6 +427,7 @@ void test('converts each photo through the photo converter before identification
       },
     ],
     openQuestions: [],
+    canSearchEbayConfidently: true,
   });
 
   await runInspectImagesJob({ jobs, objectStore, vision, photoConverter });
@@ -449,6 +455,7 @@ void test('routes low-confidence identification to needs information', async () 
       },
     ],
     openQuestions: ['Which memory capacity variant is this?'],
+    canSearchEbayConfidently: true,
   });
 
   await runInspectImagesJob({ jobs, objectStore, vision });
@@ -467,10 +474,55 @@ void test('routes low-confidence identification to needs information', async () 
   );
 });
 
+void test('routes a confident-but-generic identification to needs information, even with no open question', async () => {
+  // Real ask: 97% sure this is "a wireless keyboard" with no manufacturer
+  // or model still can't drive a useful eBay search -- confidence alone
+  // isn't enough, and the model may not think to raise it as its own
+  // openQuestions entry.
+  const jobs = new MemoryResearchJobRepository();
+  const objectStore = new MemoryObjectStore();
+  seedItem(jobs, objectStore, 'item-8', 'job-8');
+  const vision = new StubVisionProvider({
+    candidates: [
+      { itemType: 'wireless keyboard', confidence: 0.97, evidence: 'Keycap shape and shroud visible' },
+    ],
+    openQuestions: [],
+    canSearchEbayConfidently: false,
+    searchReadinessNote: 'No manufacturer, model or label is visible in any photo.',
+  });
+
+  await runInspectImagesJob({ jobs, objectStore, vision });
+
+  assert.deepEqual(jobs.statusHistory, ['IDENTIFYING', 'NEEDS_INFORMATION']);
+  assert.deepEqual(jobs.enqueued, []);
+  const openQuestionsFact = jobs.savedFacts.find((fact) => fact.field === 'identity.open_questions');
+  assert.deepEqual(JSON.parse(openQuestionsFact?.value ?? '[]'), [
+    'No manufacturer, model or label is visible in any photo.',
+  ]);
+});
+
+void test('proceeds to research when canSearchEbayConfidently is true and there are no open questions', async () => {
+  const jobs = new MemoryResearchJobRepository();
+  const objectStore = new MemoryObjectStore();
+  seedItem(jobs, objectStore, 'item-9', 'job-9');
+  const vision = new StubVisionProvider({
+    candidates: [
+      { itemType: 'wireless keyboard', manufacturer: 'Apple', model: 'Magic Keyboard', confidence: 0.97, evidence: 'Apple logo and model label visible' },
+    ],
+    openQuestions: [],
+    canSearchEbayConfidently: true,
+  });
+
+  await runInspectImagesJob({ jobs, objectStore, vision });
+
+  assert.deepEqual(jobs.statusHistory, ['IDENTIFYING', 'RESEARCHING']);
+  assert.equal(jobs.enqueued.length, 1);
+});
+
 void test('returns claimed:false when no job is queued', async () => {
   const jobs = new MemoryResearchJobRepository();
   const objectStore = new MemoryObjectStore();
-  const vision = new StubVisionProvider({ candidates: [], openQuestions: [] });
+  const vision = new StubVisionProvider({ candidates: [], openQuestions: [], canSearchEbayConfidently: true });
 
   const result = await runInspectImagesJob({ jobs, objectStore, vision });
 

@@ -404,11 +404,14 @@ export function ItemDetailView({
                   Re-run identification
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  disabled={readOnly || regeneratingResearch}
+                  disabled={readOnly || regeneratingResearch || detail.status === 'NEEDS_INFORMATION'}
                   onClick={regenerateResearch}
                 >
                   <RefreshCw className={cn(regeneratingResearch && 'animate-spin')} />
                   Regenerate eBay search
+                  {detail.status === 'NEEDS_INFORMATION' ? (
+                    <span className="ml-auto text-xs text-muted-foreground">Answer questions first</span>
+                  ) : null}
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled>
                   <Archive />

@@ -14,6 +14,7 @@ void test('accepts a well-formed identification result', () => {
       },
     ],
     openQuestions: [],
+    canSearchEbayConfidently: true,
   });
   assert.equal(parsed.candidates.length, 1);
 });
@@ -27,8 +28,30 @@ void test('defaults openQuestions to an empty array when omitted', () => {
         evidence: 'Fan shroud shape',
       },
     ],
+    canSearchEbayConfidently: false,
+    searchReadinessNote: 'No manufacturer or model visible in any photo.',
   });
   assert.deepEqual(parsed.openQuestions, []);
+});
+
+void test('requires canSearchEbayConfidently -- a generic-but-confident identification still needs it reasoned about explicitly', () => {
+  assert.throws(() =>
+    identificationResultSchema.parse({
+      candidates: [
+        { itemType: 'wireless keyboard', confidence: 0.9, evidence: 'label visible' },
+      ],
+    }),
+  );
+});
+
+void test('searchReadinessNote is optional -- only needed when canSearchEbayConfidently is false', () => {
+  const parsed = identificationResultSchema.parse({
+    candidates: [
+      { itemType: 'wireless keyboard', manufacturer: 'Apple', model: 'Magic Keyboard', confidence: 0.95, evidence: 'label' },
+    ],
+    canSearchEbayConfidently: true,
+  });
+  assert.equal(parsed.searchReadinessNote, undefined);
 });
 
 void test('rejects a candidate missing required evidence', () => {

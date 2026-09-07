@@ -31,6 +31,18 @@ export const identificationCandidateSchema = z.object({
 export const identificationResultSchema = z.object({
   candidates: z.array(identificationCandidateSchema).min(1),
   openQuestions: z.array(z.string().min(1)).default([]),
+  /**
+   * A distinct question from "is the leading candidate confident" -- a
+   * generic-but-confident identification (e.g. 97% sure this is "a
+   * wireless keyboard", no manufacturer or model) still can't drive a
+   * useful eBay search: a search on item type alone surfaces unrelated
+   * products, not genuine comparables. Required (not defaulted) so the
+   * model always reasons about it explicitly rather than it being an
+   * afterthought. See inspect-images-job.ts's needsInformation.
+   */
+  canSearchEbayConfidently: z.boolean(),
+  /** Required when canSearchEbayConfidently is false -- what specific detail would resolve it, folded into identity.open_questions so it surfaces the same way any other open question does. */
+  searchReadinessNote: z.string().min(1).optional(),
 });
 
 export type IdentificationCandidate = z.infer<

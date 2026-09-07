@@ -23,7 +23,9 @@ For each plausible identity, report:
 - confidence: 0 to 1, calibrated (do not overstate certainty)
 - evidence: a short factual note on what in the photos supports this (a visible label, logo, distinctive shape, etc.)
 
-List candidates most-likely first. Only include an unresolved price-sensitive detail (such as storage capacity, RAM or a variant that materially changes value) in openQuestions if it cannot be determined from the photos and would matter for pricing. Do not invent specifications you cannot see or confidently infer.`;
+List candidates most-likely first. Only include an unresolved price-sensitive detail (such as storage capacity, RAM or a variant that materially changes value) in openQuestions if it cannot be determined from the photos and would matter for pricing. Do not invent specifications you cannot see or confidently infer.
+
+Also assess canSearchEbayConfidently: given everything you can see, is there enough specific information (typically a manufacturer plus a model or a genuinely distinctive family/item type) to search eBay's sold listings and reliably find this exact item, rather than a flood of unrelated similar-looking products? Being confident about a generic category alone (e.g. "definitely a wireless keyboard", with no manufacturer or model visible) is usually NOT enough -- set this to false in that case, and in searchReadinessNote say exactly what would resolve it (a clearer photo of a label, the underside, a visible model number). Only set it true when you'd expect an eBay search on what you know to actually surface the right item.`;
 
 function isSupportedMediaType(
   mediaType: string,

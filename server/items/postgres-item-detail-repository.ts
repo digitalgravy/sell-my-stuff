@@ -532,10 +532,20 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
   async regenerateResearch(itemId: string): Promise<RegenerateResearchOutcome> {
     const database = getDatabase();
     const [item] = await database
-      .select({ id: items.id })
+      .select({ id: items.id, status: items.status })
       .from(items)
       .where(eq(items.id, itemId));
     if (!item) return { ok: false, reason: 'Item not found' };
+    // Manual trigger, but not a way to bypass the same gate automatic
+    // research respects -- an identification too generic to search eBay
+    // confidently (or with any other open question) needs answering first,
+    // not worked around by clicking the button again.
+    if (item.status === 'NEEDS_INFORMATION') {
+      return {
+        ok: false,
+        reason: 'Answer the open identification questions before searching eBay -- see Needs your attention.',
+      };
+    }
 
     await database.insert(jobs).values({
       id: randomUUID(),

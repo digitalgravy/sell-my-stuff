@@ -97,7 +97,19 @@ export async function runInspectImagesJob(
     )[0];
     if (!leading) throw new Error('Vision provider returned no candidates');
 
-    const identityFacts = buildIdentificationFacts(leading, outcome.result.openQuestions);
+    // A confident-but-generic identification (e.g. "definitely a wireless
+    // keyboard", no manufacturer or model) still can't drive a useful eBay
+    // search on its own -- folded into the same openQuestions array rather
+    // than a separate mechanism, so it surfaces exactly like any other
+    // open question and gates research the same way.
+    const openQuestions = outcome.result.canSearchEbayConfidently
+      ? outcome.result.openQuestions
+      : [
+          ...outcome.result.openQuestions,
+          outcome.result.searchReadinessNote ??
+            'Not enough specific detail yet to search eBay for genuine comparable sales -- a clearer manufacturer/model would help.',
+        ];
+    const identityFacts = buildIdentificationFacts(leading, openQuestions);
 
     // A second, separate vision-model turn -- condition is its own concern
     // from identity (see condition-provider.ts), logged to its own Build
@@ -141,7 +153,7 @@ export async function runInspectImagesJob(
 
     const needsInformation =
       leading.confidence < IDENTIFICATION_CONFIDENCE_THRESHOLD ||
-      outcome.result.openQuestions.length > 0;
+      openQuestions.length > 0;
     await dependencies.jobs.transitionItemStatus(
       job.itemId,
       needsInformation ? 'NEEDS_INFORMATION' : 'RESEARCHING',
