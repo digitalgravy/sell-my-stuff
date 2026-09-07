@@ -1,5 +1,11 @@
 FROM node:24-slim AS build
 
+# Needed here, not just in the runtime stage below -- the homepage ("/")
+# is statically prerendered by `next build`, which runs in THIS stage, so
+# a component reading process.env.GIT_COMMIT bakes in whatever value (or
+# lack of one) is set at build time, not at container start.
+ARG GIT_COMMIT
+ENV GIT_COMMIT=$GIT_COMMIT
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
