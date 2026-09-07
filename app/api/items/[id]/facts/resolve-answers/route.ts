@@ -5,10 +5,11 @@ import { PostgresItemDetailRepository } from '@/server/items/postgres-item-detai
 export const runtime = 'nodejs';
 
 function isFactAnswerSubmission(value: unknown): value is FactAnswerSubmission {
+  const field = (value as { field?: unknown } | null)?.field;
   return (
     typeof value === 'object' &&
     value !== null &&
-    typeof (value as { field?: unknown }).field === 'string' &&
+    (field === undefined || typeof field === 'string') &&
     typeof (value as { question?: unknown }).question === 'string' &&
     typeof (value as { answer?: unknown }).answer === 'string' &&
     (value as { answer: string }).answer.trim().length > 0
