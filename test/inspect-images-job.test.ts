@@ -336,7 +336,11 @@ void test('runs condition assessment alongside identification and saves conditio
   assert.equal(wearFact?.value, JSON.stringify('Light scuffing on the plastic underside'));
 });
 
-void test('routes low-confidence condition assessment to needs information even when identification is confident', async () => {
+void test('a low-confidence or questioning condition assessment does not block research when identification is confident', async () => {
+  // Research only needs identity facts to build eBay search keywords (see
+  // buildSearchKeywords in research-comparable-sales-job.ts) -- an
+  // uncertain condition grade has no bearing on that step, so it must not
+  // hold up research the way an identity open question correctly does.
   const jobs = new MemoryResearchJobRepository();
   const objectStore = new MemoryObjectStore();
   seedItem(jobs, objectStore, 'item-6', 'job-6');
@@ -351,10 +355,16 @@ void test('routes low-confidence condition assessment to needs information even 
     openQuestions: ["Can you show the underside so we can check for scratches?"],
   });
 
-  await runInspectImagesJob({ jobs, objectStore, vision, condition });
+  const result = await runInspectImagesJob({ jobs, objectStore, vision, condition });
 
-  assert.deepEqual(jobs.statusHistory, ['IDENTIFYING', 'NEEDS_INFORMATION']);
-  assert.deepEqual(jobs.enqueued, []);
+  assert.deepEqual(result, { claimed: true, itemId: 'item-6', outcome: 'succeeded' });
+  assert.deepEqual(jobs.statusHistory, ['IDENTIFYING', 'RESEARCHING']);
+  assert.equal(jobs.enqueued.length, 1);
+  assert.equal(jobs.enqueued[0]?.type, 'research_comparable_sales');
+  // The low confidence and open question are still recorded, just not
+  // blocking -- see deriveAttention for how they surface non-blockingly.
+  const gradeFact = jobs.savedFacts.find((fact) => fact.field === 'condition.overall_grade');
+  assert.equal(gradeFact?.confidence, 0.4);
   const openQuestionsFact = jobs.savedFacts.find((fact) => fact.field === 'condition.open_questions');
   assert.deepEqual(JSON.parse(openQuestionsFact?.value ?? '[]'), [
     'Can you show the underside so we can check for scratches?',

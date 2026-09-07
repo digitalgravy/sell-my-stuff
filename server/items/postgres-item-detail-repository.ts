@@ -230,14 +230,16 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
 
     const hasIdentityFacts = factRows.some((row) => IDENTITY_FACT_FIELDS.has(row.field));
     const hasConditionFacts = factRows.some((row) => CONDITION_FACT_FIELDS.has(row.field));
-    // Identity and condition open questions surface the same way -- both
-    // are "automated-first, confidence-gated" fields per PROJECT_STATUS.md,
-    // and deriveAttention doesn't need to know which concern raised a
-    // question to turn it into an actionable task.
-    const openQuestions = [
-      ...parseStringArray(factRows.find((row) => row.field === 'identity.open_questions')?.value),
-      ...parseStringArray(factRows.find((row) => row.field === 'condition.open_questions')?.value),
-    ];
+    // Kept separate, not merged -- identity open questions gate research
+    // (NEEDS_INFORMATION), condition ones deliberately don't (see
+    // inspect-images-job.ts), and deriveAttention needs to know which is
+    // which to render the latter as non-blocking tasks.
+    const openQuestions = parseStringArray(
+      factRows.find((row) => row.field === 'identity.open_questions')?.value,
+    );
+    const conditionOpenQuestions = parseStringArray(
+      factRows.find((row) => row.field === 'condition.open_questions')?.value,
+    );
     const ebaySearchUrlRaw = factRows.find((row) => row.field === 'research.ebay_search_url')?.value;
     const ebaySearchUrl =
       typeof ebaySearchUrlRaw === 'string' ? (parseFactValue(ebaySearchUrlRaw) as string) : undefined;
@@ -391,6 +393,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       attention: deriveAttention({
         status: item.status,
         openQuestions,
+        conditionOpenQuestions,
         lastError: job?.lastError ?? undefined,
         ebaySearchUrl,
         hasEvidence: comparableSaleList.length > 0,

@@ -26,7 +26,6 @@ export const DEFAULT_JOB_LEASE_MS = 15 * 60 * 1000;
 export const BASE_RETRY_DELAY_MS = 5_000;
 export const MAX_RETRY_DELAY_MS = 5 * 60 * 1000;
 const IDENTIFICATION_CONFIDENCE_THRESHOLD = 0.7;
-const CONDITION_CONFIDENCE_THRESHOLD = 0.7;
 
 export interface InspectImagesJobDependencies {
   jobs: ResearchJobRepository;
@@ -99,15 +98,20 @@ export async function runInspectImagesJob(
     if (!leading) throw new Error('Vision provider returned no candidates');
 
     const identityFacts = buildIdentificationFacts(leading, outcome.result.openQuestions);
-    let identityNeedsInformation =
-      leading.confidence < IDENTIFICATION_CONFIDENCE_THRESHOLD ||
-      outcome.result.openQuestions.length > 0;
 
     // A second, separate vision-model turn -- condition is its own concern
     // from identity (see condition-provider.ts), logged to its own Build
     // log row. Skipped entirely (not a failure) when no provider is
     // configured; a real call that errors fails the whole job, the same as
     // identification, rather than silently losing a paid-for attempt.
+    //
+    // Deliberately does NOT feed into needsInformation below: eBay research
+    // only needs identity facts (see buildSearchKeywords), so an uncertain
+    // condition grade shouldn't hold up a step it has no bearing on. Low-
+    // confidence condition fields and open questions still get saved and
+    // still surface as (non-blocking) attention tasks -- see deriveAttention
+    // -- for the user to firm up whenever they get to it, in parallel with
+    // research running rather than gating it.
     let conditionFacts: IdentificationFactInput[] = [];
     if (dependencies.condition) {
       const conditionProvider = dependencies.condition;
@@ -125,8 +129,6 @@ export async function runInspectImagesJob(
         photosForIdentification,
       );
       conditionFacts = buildConditionFacts(conditionOutcome.result);
-      identityNeedsInformation =
-        identityNeedsInformation || conditionNeedsInformation(conditionOutcome.result);
     }
 
     await dependencies.jobs.saveIdentificationFacts(job.itemId, [
@@ -137,7 +139,9 @@ export async function runInspectImagesJob(
       photos.map((photo) => photo.id),
     );
 
-    const needsInformation = identityNeedsInformation;
+    const needsInformation =
+      leading.confidence < IDENTIFICATION_CONFIDENCE_THRESHOLD ||
+      outcome.result.openQuestions.length > 0;
     await dependencies.jobs.transitionItemStatus(
       job.itemId,
       needsInformation ? 'NEEDS_INFORMATION' : 'RESEARCHING',
@@ -236,20 +240,6 @@ async function assessConditionAndLog(
     });
     throw error;
   }
-}
-
-function conditionNeedsInformation(result: ConditionAssessmentResult): boolean {
-  const fields = [
-    result.overallGrade,
-    result.functionalStatus,
-    result.cosmeticWear,
-    result.defects,
-    result.missingParts,
-  ];
-  return (
-    fields.some((field) => field !== undefined && field.confidence < CONDITION_CONFIDENCE_THRESHOLD) ||
-    result.openQuestions.length > 0
-  );
 }
 
 function buildConditionFacts(result: ConditionAssessmentResult): IdentificationFactInput[] {

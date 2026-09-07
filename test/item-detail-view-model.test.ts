@@ -170,6 +170,42 @@ void test('deriveAttention returns nothing for a status with no attention needed
   );
 });
 
+void test('deriveAttention surfaces a condition open question as non-blocking even while research proceeds', () => {
+  // The whole point of not gating research on condition confidence: the
+  // "Search eBay" task and the condition question coexist, one required,
+  // one not.
+  const tasks = deriveAttention({
+    status: 'RESEARCHING',
+    openQuestions: [],
+    conditionOpenQuestions: ['Does the power adapter and box come with it?'],
+    hasEvidence: false,
+    ebaySearchUrl: 'https://www.ebay.co.uk/sch/i.html?_nkw=Apple+HomePod+mini',
+  });
+  assert.equal(tasks.length, 2);
+  assert.equal(tasks[0]?.ctaLabel, 'Search eBay');
+  assert.equal(tasks[0]?.required, true);
+  assert.equal(tasks[1]?.title, 'Does the power adapter and box come with it?');
+  assert.equal(tasks[1]?.required, false);
+});
+
+void test('deriveAttention still surfaces a condition open question once research has already completed', () => {
+  const tasks = deriveAttention({
+    status: 'RESEARCHING',
+    openQuestions: [],
+    conditionOpenQuestions: ['Does the power adapter and box come with it?'],
+    hasEvidence: true,
+  });
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0]?.required, false);
+});
+
+void test('deriveAttention returns nothing for condition when there are no condition open questions', () => {
+  assert.deepEqual(
+    deriveAttention({ status: 'IDENTIFYING', openQuestions: [], conditionOpenQuestions: [], hasEvidence: false }),
+    [],
+  );
+});
+
 void test('deriveAttention offers to prepare an eBay search when RESEARCHING but no link has ever been generated', () => {
   // Real case: an item identified before the research_comparable_sales job
   // type existed sits at RESEARCHING forever with no ebaySearchUrl fact --

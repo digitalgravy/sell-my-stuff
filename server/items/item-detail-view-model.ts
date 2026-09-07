@@ -78,19 +78,41 @@ export function derivePhases(input: {
 }
 
 /**
- * Real attention tasks are always "required" today — nothing in the current
- * backend distinguishes a blocking question from a nice-to-have one (see
- * PROJECT_STATUS.md's item-detail-page follow-up). This mirrors
- * homepage-snapshot.ts's NEEDS_INFORMATION/FAILED handling exactly, reshaped
- * as actionable tasks instead of a single summary line.
+ * Condition open questions are the one real case of a non-required task
+ * today: unlike an identity question, they never gate research (see
+ * inspect-images-job.ts's comment on why) so they always render, appended
+ * to whatever the status's own primary task(s) are, rather than only
+ * appearing via a NEEDS_INFORMATION branch. Everything else here still
+ * comes back "required" (see PROJECT_STATUS.md's item-detail-page
+ * follow-up) since nothing else distinguishes a blocking question from a
+ * nice-to-have one yet.
+ */
+function buildConditionAttentionTasks(conditionOpenQuestions: string[]): AttentionTask[] {
+  return conditionOpenQuestions.map((question, index) => ({
+    id: `condition-question-${index}`,
+    title: question,
+    note: 'Raised during condition assessment.',
+    impact:
+      'Why it matters: sharper condition detail improves pricing confidence, but research and listing can proceed without it.',
+    ctaLabel: 'Add evidence',
+    required: false,
+  }));
+}
+
+/**
+ * This mirrors homepage-snapshot.ts's NEEDS_INFORMATION/FAILED handling
+ * exactly, reshaped as actionable tasks instead of a single summary line.
  */
 export function deriveAttention(input: {
   status: ItemStatusValue;
   openQuestions: string[];
+  conditionOpenQuestions?: string[];
   lastError?: string;
   ebaySearchUrl?: string;
   hasEvidence: boolean;
 }): AttentionTask[] {
+  const conditionTasks = buildConditionAttentionTasks(input.conditionOpenQuestions ?? []);
+
   if (input.status === 'RESEARCHING' && !input.hasEvidence) {
     if (input.ebaySearchUrl) {
       return [
@@ -103,6 +125,7 @@ export function deriveAttention(input: {
           href: input.ebaySearchUrl,
           required: true,
         },
+        ...conditionTasks,
       ];
     }
     // No search link has ever been generated for this item -- either the
@@ -118,20 +141,24 @@ export function deriveAttention(input: {
         ctaLabel: 'Prepare eBay search',
         required: true,
       },
+      ...conditionTasks,
     ];
   }
 
   if (input.status === 'NEEDS_INFORMATION') {
     if (input.openQuestions.length > 0) {
-      return input.openQuestions.map((question, index) => ({
-        id: `open-question-${index}`,
-        title: question,
-        note: 'Raised during identification.',
-        impact:
-          'Why it blocks: research does not start automatically until this is answered.',
-        ctaLabel: 'Add evidence',
-        required: true,
-      }));
+      return [
+        ...input.openQuestions.map((question, index) => ({
+          id: `open-question-${index}`,
+          title: question,
+          note: 'Raised during identification.',
+          impact:
+            'Why it blocks: research does not start automatically until this is answered.',
+          ctaLabel: 'Add evidence',
+          required: true,
+        })),
+        ...conditionTasks,
+      ];
     }
     return [
       {
@@ -143,6 +170,7 @@ export function deriveAttention(input: {
         ctaLabel: 'Review facts',
         required: true,
       },
+      ...conditionTasks,
     ];
   }
 
@@ -156,10 +184,11 @@ export function deriveAttention(input: {
         ctaLabel: 'Retry',
         required: true,
       },
+      ...conditionTasks,
     ];
   }
 
-  return [];
+  return conditionTasks;
 }
 
 export interface RunForBuildStep {
