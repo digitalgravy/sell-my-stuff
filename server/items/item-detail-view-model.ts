@@ -120,7 +120,7 @@ export function deriveAttention(input: {
         {
           id: 'research-ebay',
           title: 'Find comparable sold listings on eBay',
-          note: 'There is no automated eBay search -- eBay blocks automated browsers, so this opens a pre-filtered Sold + Completed search for you to capture with the bookmarklet.',
+          note: 'Automated eBay research (a real Chrome browser, tried first on claw.internal, then a Docker fallback) didn’t turn up any comparable sold listings, or wasn’t available -- this opens a pre-filtered Sold + Completed search for you to check yourself.',
           impact: 'Why it matters: pricing needs real comparable sales before a listing can be drafted.',
           ctaLabel: 'Search eBay',
           href: input.ebaySearchUrl,
@@ -137,7 +137,7 @@ export function deriveAttention(input: {
       {
         id: 'research-not-started',
         title: 'Comparable-sales research has not run yet',
-        note: 'Once run, this prepares a pre-filtered eBay search link for you to capture yourself -- eBay blocks automated browsers, so there is no way to skip that step.',
+        note: 'This will try a real Chrome browser (claw.internal, then a Docker fallback) to search eBay automatically -- if neither turns up sold listings, you’ll get a pre-filtered search link to check yourself instead.',
         impact: 'Why it matters: pricing needs real comparable sales before a listing can be drafted.',
         ctaLabel: 'Prepare eBay search',
         required: true,
