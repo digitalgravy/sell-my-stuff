@@ -66,7 +66,18 @@ export async function runResearchComparableSalesJob(
     if (dependencies.browserProvider) {
       const result = await dependencies.browserProvider.fetchSoldListings(keywords);
       if (result.outcome === 'succeeded' && result.sales.length > 0) {
+        console.log(
+          `research_comparable_sales: browser research found ${result.sales.length} sale(s) for item ${job.itemId}`,
+        );
         await importAutoResearchedSales(dependencies, job.itemId, facts, result.sales);
+      } else if (result.outcome === 'succeeded') {
+        console.log(
+          `research_comparable_sales: browser research for item ${job.itemId} found no sales -- falling back to the manual search link`,
+        );
+      } else {
+        console.log(
+          `research_comparable_sales: browser research unavailable for item ${job.itemId} (${result.reason}) -- falling back to the manual search link`,
+        );
       }
     }
 
