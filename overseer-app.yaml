@@ -47,6 +47,12 @@ container:
     # skips straight to the manual search-link fallback -- see that
     # job's own doc comment.
     SELL_BROWSER_BASE_URL: https://sell-browser.26fe.uk
+    # sell-browser-mac: the real Chrome on claw.internal (an always-on
+    # Mac, not Overseer-managed -- see ~/Documents/Projects/sell-browser-mac
+    # on the dev machine for its source). Tried before SELL_BROWSER_BASE_URL
+    # above -- see research-comparable-sales-job.ts's cascade doc comment
+    # for why. Port 3200 is that service's own default.
+    SELL_BROWSER_MAC_BASE_URL: http://claw.internal:3200
 
 network:
   hostname: sell

@@ -2,7 +2,10 @@ import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-compa
 import { getAnthropicVisionProvider } from '@/server/ai/anthropic-vision-provider';
 import { getPhotoConverter } from '@/server/ai/heic-photo-converter';
 import { PostgresResearchJobRepository } from '@/server/items/postgres-research-repository';
-import { getEbayBrowserResearchProvider } from '@/server/research/ebay-browser-research-provider';
+import {
+  getEbayBrowserResearchProvider,
+  getMacBrowserResearchProvider,
+} from '@/server/research/ebay-browser-research-provider';
 import { getFileObjectStore } from '@/server/storage/file-object-store';
 
 import { runInspectImagesJob } from './inspect-images-job';
@@ -20,7 +23,12 @@ async function main() {
     objectStore: getFileObjectStore(),
     vision: getAnthropicVisionProvider(),
     photoConverter: getPhotoConverter(),
-    browserProvider: getEbayBrowserResearchProvider(),
+    // Mac first (real Chrome, real trusted-device identity -- most
+    // likely to get through eBay's bot detection), Docker sell-browser
+    // as fallback. Both filtered to only the ones actually configured.
+    browserProviders: [getMacBrowserResearchProvider(), getEbayBrowserResearchProvider()].filter(
+      (provider) => provider !== undefined,
+    ),
     matchProvider: getAnthropicComparableMatchProvider(),
   };
 

@@ -83,13 +83,25 @@ export class EbayBrowserResearchProvider implements ComparableSalesBrowserProvid
   }
 }
 
-let sharedProvider: EbayBrowserResearchProvider | undefined;
+const sharedProviders = new Map<string, EbayBrowserResearchProvider>();
 
-/** Undefined when SELL_BROWSER_BASE_URL isn't configured -- callers treat that the same as any other "unavailable" outcome and fall back to the manual search-link path. */
-export function getEbayBrowserResearchProvider(): EbayBrowserResearchProvider | undefined {
-  const baseUrl = process.env.SELL_BROWSER_BASE_URL;
+/** Undefined when the given env var isn't configured -- callers treat that the same as any other "unavailable" outcome and fall back to the next tier. */
+function providerFromEnv(envVar: string): EbayBrowserResearchProvider | undefined {
+  const baseUrl = process.env[envVar];
   if (!baseUrl) return undefined;
-  if (sharedProvider) return sharedProvider;
-  sharedProvider = new EbayBrowserResearchProvider(baseUrl);
-  return sharedProvider;
+  const existing = sharedProviders.get(envVar);
+  if (existing) return existing;
+  const provider = new EbayBrowserResearchProvider(baseUrl);
+  sharedProviders.set(envVar, provider);
+  return provider;
+}
+
+/** sell-browser-mac: the real Chrome on an always-on Mac -- see that project's README. Tried first (see research-comparable-sales-job.ts's cascade doc comment). */
+export function getMacBrowserResearchProvider(): EbayBrowserResearchProvider | undefined {
+  return providerFromEnv('SELL_BROWSER_MAC_BASE_URL');
+}
+
+/** sell-browser: the Docker/Xvfb Chromium fallback. */
+export function getEbayBrowserResearchProvider(): EbayBrowserResearchProvider | undefined {
+  return providerFromEnv('SELL_BROWSER_BASE_URL');
 }

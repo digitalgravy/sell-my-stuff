@@ -211,7 +211,7 @@ void test('runResearchComparableSalesJob imports sales the browser provider find
     usage: { inputTokens: 20, outputTokens: 10 },
   });
 
-  const result = await runResearchComparableSalesJob({ jobs, browserProvider, matchProvider });
+  const result = await runResearchComparableSalesJob({ jobs, browserProviders: [browserProvider], matchProvider });
 
   assert.deepEqual(result, { claimed: true, itemId: 'item-2', outcome: 'succeeded' });
   assert.equal(browserProvider.received[0], 'Apple');
@@ -237,7 +237,7 @@ void test('runResearchComparableSalesJob saves auto-researched sales unclassifie
     sales: [{ title: 'Widget', match: 'New', soldAt: '2026-09-01', price: 20 }],
   });
 
-  await runResearchComparableSalesJob({ jobs, browserProvider });
+  await runResearchComparableSalesJob({ jobs, browserProviders: [browserProvider] });
 
   assert.equal(jobs.savedComparableSales.length, 1);
   assert.equal(jobs.matchRunLogs.length, 0);
@@ -251,10 +251,54 @@ void test('runResearchComparableSalesJob falls back to the search-link fact when
     reason: 'Browser session is WAITING_FOR_HUMAN, not available for automated research',
   });
 
-  const result = await runResearchComparableSalesJob({ jobs, browserProvider });
+  const result = await runResearchComparableSalesJob({ jobs, browserProviders: [browserProvider] });
 
   assert.deepEqual(result, { claimed: true, itemId: 'item-4', outcome: 'succeeded' });
   assert.equal(jobs.savedComparableSales.length, 0);
   const urlFact = jobs.savedFacts.find((f) => f.field === 'research.ebay_search_url');
   assert.ok(urlFact);
+});
+
+void test('runResearchComparableSalesJob falls through to the next browser provider when the first is unavailable', async () => {
+  const jobs = new MemoryJobRepository();
+  jobs.queue.push({ id: 'job-5', itemId: 'item-5', type: 'research_comparable_sales', attempt: 0 });
+  const macProvider = new StubBrowserProvider({
+    outcome: 'unavailable',
+    reason: 'Not signed in to eBay',
+  });
+  const dockerProvider = new StubBrowserProvider({
+    outcome: 'succeeded',
+    query: 'item',
+    url: 'https://www.ebay.co.uk/sch/i.html?_nkw=item',
+    sales: [{ title: 'Widget', match: 'New', soldAt: '2026-09-01', price: 20 }],
+  });
+
+  await runResearchComparableSalesJob({ jobs, browserProviders: [macProvider, dockerProvider] });
+
+  assert.equal(macProvider.received.length, 1);
+  assert.equal(dockerProvider.received.length, 1);
+  assert.equal(jobs.savedComparableSales.length, 1);
+});
+
+void test('runResearchComparableSalesJob does not try a second provider once the first gives a real (even empty) answer', async () => {
+  const jobs = new MemoryJobRepository();
+  jobs.queue.push({ id: 'job-6', itemId: 'item-6', type: 'research_comparable_sales', attempt: 0 });
+  const macProvider = new StubBrowserProvider({
+    outcome: 'succeeded',
+    query: 'item',
+    url: 'https://www.ebay.co.uk/sch/i.html?_nkw=item',
+    sales: [],
+  });
+  const dockerProvider = new StubBrowserProvider({
+    outcome: 'succeeded',
+    query: 'item',
+    url: 'https://www.ebay.co.uk/sch/i.html?_nkw=item',
+    sales: [{ title: 'Widget', match: 'New', soldAt: '2026-09-01', price: 20 }],
+  });
+
+  await runResearchComparableSalesJob({ jobs, browserProviders: [macProvider, dockerProvider] });
+
+  assert.equal(macProvider.received.length, 1);
+  assert.equal(dockerProvider.received.length, 0);
+  assert.equal(jobs.savedComparableSales.length, 0);
 });

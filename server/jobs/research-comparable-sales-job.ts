@@ -10,8 +10,16 @@ export const RESEARCH_COMPARABLE_SALES_JOB_TYPE = 'research_comparable_sales';
 
 export interface ResearchComparableSalesJobDependencies {
   jobs: ResearchJobRepository;
-  /** Undefined when sell-browser isn't configured (e.g. local dev) -- falls straight back to the manual search-link path. */
-  browserProvider?: ComparableSalesBrowserProvider;
+  /**
+   * Tried in order, cheapest/most-likely-to-work first (the real Mac
+   * browser operator, then the Docker/Xvfb one) -- the first provider
+   * to actually complete a search (even with zero results: that's a
+   * real answer, not a failure) stops the cascade. A provider returning
+   * `unavailable` (unconfigured, busy, blocked) falls through to the
+   * next one. Empty/undefined falls straight to the manual search-link
+   * path (tier 3).
+   */
+  browserProviders?: ComparableSalesBrowserProvider[];
   /** Undefined skips classification -- auto-imported sales are saved unclassified rather than lost. */
   matchProvider?: ComparableMatchProvider;
   maxAttempts?: number;
@@ -26,23 +34,36 @@ const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_LEASE_MS = 15 * 60 * 1000;
 
 /**
- * Three-tier cascade for turning identified facts into comparable-sales
- * evidence, cheapest-for-the-user first:
+ * Cascade for turning identified facts into comparable-sales evidence,
+ * cheapest/most-likely-to-work first:
  *
- * 1. sell-browser (a separate Overseer project -- see its README): a real,
- *    authenticated eBay session driven at human pace. Tried first and
- *    silently skipped (not an error) if unconfigured, busy, or blocked --
- *    eBay bot-blocking, a session mid-human-takeover, or the service being
- *    down are all real, expected outcomes here, not failures of this job.
- * 2. (Future) an interactive agent session the user is actually present
+ * 1. sell-browser-mac: the real, already-logged-in Chrome on an always-on
+ *    Mac, driven via a real Playwright CDP connection at human pace (real
+ *    mouse travel, real per-character typing, real pauses -- see that
+ *    project's human-interaction.mjs). Built after sell-browser (below)
+ *    started getting flagged by eBay even under human-paced input --
+ *    a real machine with a real browser and a real trusted-device
+ *    identity turned out to get through where a Docker/Xvfb Chromium
+ *    didn't.
+ * 2. sell-browser (a separate Overseer project -- see its README): the
+ *    same human-paced approach, but Docker/Xvfb Chromium rather than a
+ *    real machine. Kept as a fallback in case the Mac is asleep, logged
+ *    out, or unreachable.
+ *
+ * Both are tried in order via browserProviders and silently skipped (not
+ * an error) if unconfigured, busy, or blocked -- eBay bot-blocking, a
+ * session mid-human-takeover, or the service being down are all real,
+ * expected outcomes here, not failures of this job.
+ *
+ * 3. (Future) an interactive agent session the user is actually present
  *    for -- not built; the user would need to be the one triggering it,
  *    which doesn't fit a background job.
- * 3. A direct, pre-filtered Sold+Completed search link, saved as a fact so
+ * 4. A direct, pre-filtered Sold+Completed search link, saved as a fact so
  *    the homepage can surface "go capture this on eBay" as a concrete next
  *    action -- the only tier that was ever built until now, and still the
  *    fallback of last resort.
  *
- * Sales pulled in automatically (tier 1) go through the same match
+ * Sales pulled in automatically (tiers 1-2) go through the same match
  * classifier as a manual capture import before being trusted as evidence
  * (see server/items/comparable-match.ts) -- an LLM judging fitness, never
  * treated as ground truth without that pass.
@@ -63,22 +84,27 @@ export async function runResearchComparableSalesJob(
     const facts = await dependencies.jobs.getIdentityFacts(job.itemId);
     const keywords = buildSearchKeywords(facts);
 
-    if (dependencies.browserProvider) {
-      const result = await dependencies.browserProvider.fetchSoldListings(keywords);
-      if (result.outcome === 'succeeded' && result.sales.length > 0) {
-        console.log(
-          `research_comparable_sales: browser research found ${result.sales.length} sale(s) for item ${job.itemId}`,
-        );
-        await importAutoResearchedSales(dependencies, job.itemId, facts, result.sales);
-      } else if (result.outcome === 'succeeded') {
-        console.log(
-          `research_comparable_sales: browser research for item ${job.itemId} found no sales -- falling back to the manual search link`,
-        );
-      } else {
-        console.log(
-          `research_comparable_sales: browser research unavailable for item ${job.itemId} (${result.reason}) -- falling back to the manual search link`,
-        );
+    for (const provider of dependencies.browserProviders ?? []) {
+      const result = await provider.fetchSoldListings(keywords);
+      if (result.outcome === 'succeeded') {
+        if (result.sales.length > 0) {
+          console.log(
+            `research_comparable_sales: browser research found ${result.sales.length} sale(s) for item ${job.itemId}`,
+          );
+          await importAutoResearchedSales(dependencies, job.itemId, facts, result.sales);
+        } else {
+          console.log(
+            `research_comparable_sales: browser research for item ${job.itemId} found no sales -- falling back to the manual search link`,
+          );
+        }
+        // A real answer (even an empty one) from a working browser --
+        // stop the cascade rather than asking a second provider the
+        // identical question against the same live eBay.
+        break;
       }
+      console.log(
+        `research_comparable_sales: browser research unavailable for item ${job.itemId} (${result.reason}) -- trying the next tier`,
+      );
     }
 
     const url = buildEbaySearchUrlFromKeywords(keywords);
