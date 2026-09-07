@@ -27,11 +27,6 @@ export interface WorkingItem {
   activity: ActivityState;
 }
 
-export interface HomepageSnapshot {
-  attention: AttentionItem[];
-  working: WorkingItem[];
-}
-
 // Only statuses a worker can currently produce (see inspect-images-job.ts)
 // get a real stage label; anything else falls back to its raw status so a
 // future stage is visible, not silently dropped, until this map is extended.
@@ -54,15 +49,63 @@ const NO_OPEN_QUESTION_REASON = 'Confidence too low to proceed automatically';
 const GENERIC_FAILURE_REASON = 'Identification failed';
 const MAX_ERROR_REASON_LENGTH = 160;
 
+export interface HomepageStats {
+  /** Evidence exists and nothing required is outstanding, but not yet live. */
+  ready: number;
+  /** Active (non-terminal) and not ready -- still has something outstanding. */
+  inProgress: number;
+  /** Status LIVE -- currently at auction/listed. */
+  live: number;
+  /** Status SOLD or COMPLETE. */
+  cleared: number;
+  /** Sum of a real recorded sale price -- always 0 today, shown regardless (unlike the counts above, never hidden at 0). */
+  realisedTotal: number;
+  /** Sum of the computed Buy-It-Now price across every active, not-yet-live item that has one -- shown regardless of value. */
+  estimatedValueTotal: number;
+}
+
+export interface HomepageSnapshot {
+  attention: AttentionItem[];
+  working: WorkingItem[];
+  stats: HomepageStats;
+}
+
+/**
+ * Same "is this item ready" condition as deriveAttention's blocking checks
+ * (item-detail-view-model.ts) -- duplicated rather than imported to avoid a
+ * circular import between the two modules (that one already imports
+ * summarizeError from here). Keep the two in sync by hand.
+ */
+function isReady(row: HomepageItemRow): boolean {
+  if (!row.hasEvidence) return false;
+  if (row.status === 'NEEDS_INFORMATION' || row.status === 'FAILED') return false;
+  if (row.status === 'RESEARCHING') return row.hasEvidence;
+  return true;
+}
+
 export function buildHomepageSnapshot(
   rows: HomepageItemRow[],
+  outcomeCounts: {
+    live: number;
+    cleared: number;
+    realisedTotal: number;
+    estimatedValueTotal: number;
+  } = { live: 0, cleared: 0, realisedTotal: 0, estimatedValueTotal: 0 },
 ): HomepageSnapshot {
   const attention: AttentionItem[] = [];
   const working: WorkingItem[] = [];
+  let ready = 0;
+  let inProgress = 0;
 
   for (const row of rows) {
     const title = displayTitle(row.facts);
     const updatedAt = row.updatedAt.toISOString();
+
+    if (isReady(row)) {
+      ready += 1;
+    } else {
+      inProgress += 1;
+    }
 
     if (row.status === 'NEEDS_INFORMATION') {
       attention.push({
@@ -71,11 +114,13 @@ export function buildHomepageSnapshot(
         reason: row.facts.openQuestions[0] ?? NO_OPEN_QUESTION_REASON,
         updatedAt,
       });
-    } else if (row.status === 'RESEARCHING' && row.facts.ebaySearchUrl && !row.hasEvidence) {
+    } else if (row.status === 'RESEARCHING' && !row.hasEvidence) {
       attention.push({
         id: row.id,
         title,
-        reason: 'Ready to search eBay for comparable sold listings',
+        reason: row.facts.ebaySearchUrl
+          ? 'Ready to search eBay for comparable sold listings'
+          : 'Comparable-sales research has not run yet',
         updatedAt,
       });
     } else if (row.status === 'FAILED') {
@@ -97,7 +142,18 @@ export function buildHomepageSnapshot(
     }
   }
 
-  return { attention, working };
+  return {
+    attention,
+    working,
+    stats: {
+      ready,
+      inProgress,
+      live: outcomeCounts.live,
+      cleared: outcomeCounts.cleared,
+      realisedTotal: outcomeCounts.realisedTotal,
+      estimatedValueTotal: outcomeCounts.estimatedValueTotal,
+    },
+  };
 }
 
 export function deriveActivityState(row: {

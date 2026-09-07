@@ -15,12 +15,20 @@ export async function GET(request: Request) {
   // No persistence exists until capture is enabled, so there are truthfully
   // zero items rather than an error to surface.
   if (process.env.CAPTURE_API_ENABLED !== 'true') {
-    return Response.json({ attention: [], working: [] });
+    return Response.json({
+      attention: [],
+      working: [],
+      stats: { ready: 0, inProgress: 0, live: 0, cleared: 0, realisedTotal: 0, estimatedValueTotal: 0 },
+    });
   }
 
   try {
-    const rows = await new PostgresHomepageRepository().listActiveItems();
-    return Response.json(buildHomepageSnapshot(rows));
+    const repository = new PostgresHomepageRepository();
+    const [rows, outcomeCounts] = await Promise.all([
+      repository.listActiveItems(),
+      repository.getOutcomeCounts(),
+    ]);
+    return Response.json(buildHomepageSnapshot(rows, outcomeCounts));
   } catch (error) {
     console.error(
       'Failed to load homepage items',

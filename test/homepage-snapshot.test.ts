@@ -58,7 +58,7 @@ void test('routes non-NEEDS_INFORMATION statuses into working with a stage label
   const snapshot = buildHomepageSnapshot([
     row({ id: 'a', status: 'INBOX' }),
     row({ id: 'b', status: 'IDENTIFYING' }),
-    row({ id: 'c', status: 'RESEARCHING' }),
+    row({ id: 'c', status: 'RESEARCHING', hasEvidence: true }),
   ]);
 
   assert.equal(snapshot.attention.length, 0);
@@ -90,6 +90,17 @@ void test('routes a RESEARCHING item with a ready eBay search link into attentio
     snapshot.attention[0]?.reason,
     'Ready to search eBay for comparable sold listings',
   );
+});
+
+void test('routes a RESEARCHING item with no search link generated at all into attention', () => {
+  // Real case: an item identified before research_comparable_sales existed.
+  const snapshot = buildHomepageSnapshot([
+    row({ status: 'RESEARCHING', facts: { openQuestions: [] }, hasEvidence: false }),
+  ]);
+
+  assert.equal(snapshot.working.length, 0);
+  assert.equal(snapshot.attention.length, 1);
+  assert.equal(snapshot.attention[0]?.reason, 'Comparable-sales research has not run yet');
 });
 
 void test('a RESEARCHING item with a search link but existing evidence stays in working, not attention', () => {
@@ -136,7 +147,7 @@ void test('working items carry the derived activity state', () => {
   const snapshot = buildHomepageSnapshot([
     row({ id: 'a', status: 'IDENTIFYING', jobState: 'RUNNING' }),
     row({ id: 'b', status: 'IDENTIFYING', jobState: 'QUEUED' }),
-    row({ id: 'c', status: 'RESEARCHING', jobState: undefined }),
+    row({ id: 'c', status: 'RESEARCHING', jobState: undefined, hasEvidence: true }),
   ]);
 
   assert.deepEqual(
@@ -200,6 +211,7 @@ void test('summarizeError truncates a very long message', () => {
 void test('derives a display title from manufacturer, model and item type', () => {
   const withManufacturerAndModel = buildHomepageSnapshot([
     row({
+      hasEvidence: true,
       facts: {
         manufacturer: 'Apple',
         model: 'Magic Keyboard',
@@ -210,13 +222,59 @@ void test('derives a display title from manufacturer, model and item type', () =
   assert.equal(withManufacturerAndModel.working[0]?.title, 'Apple Magic Keyboard');
 
   const withManufacturerAndItemType = buildHomepageSnapshot([
-    row({ facts: { manufacturer: 'NVIDIA', itemType: 'graphics card', openQuestions: [] } }),
+    row({
+      hasEvidence: true,
+      facts: { manufacturer: 'NVIDIA', itemType: 'graphics card', openQuestions: [] },
+    }),
   ]);
   assert.equal(
     withManufacturerAndItemType.working[0]?.title,
     'NVIDIA graphics card',
   );
 
-  const withNoFacts = buildHomepageSnapshot([row({ facts: { openQuestions: [] } })]);
+  const withNoFacts = buildHomepageSnapshot([
+    row({ hasEvidence: true, facts: { openQuestions: [] } }),
+  ]);
   assert.equal(withNoFacts.working[0]?.title, 'Unidentified item');
+});
+
+void test('stats.ready counts only items with evidence and nothing outstanding', () => {
+  const snapshot = buildHomepageSnapshot([
+    row({ id: 'a', status: 'RESEARCHING', hasEvidence: true }),
+    row({ id: 'b', status: 'RESEARCHING', hasEvidence: false }),
+    row({ id: 'c', status: 'NEEDS_INFORMATION' }),
+    row({ id: 'd', status: 'FAILED' }),
+    row({ id: 'e', status: 'INBOX' }),
+  ]);
+  assert.equal(snapshot.stats.ready, 1);
+  assert.equal(snapshot.stats.inProgress, 4);
+});
+
+void test('stats passes through outcome counts and totals from outside the active set unchanged', () => {
+  const snapshot = buildHomepageSnapshot([], {
+    live: 3,
+    cleared: 7,
+    realisedTotal: 120.5,
+    estimatedValueTotal: 940,
+  });
+  assert.deepEqual(snapshot.stats, {
+    ready: 0,
+    inProgress: 0,
+    live: 3,
+    cleared: 7,
+    realisedTotal: 120.5,
+    estimatedValueTotal: 940,
+  });
+});
+
+void test('stats defaults everything outside the active set to 0 when not supplied', () => {
+  const snapshot = buildHomepageSnapshot([]);
+  assert.deepEqual(snapshot.stats, {
+    ready: 0,
+    inProgress: 0,
+    live: 0,
+    cleared: 0,
+    realisedTotal: 0,
+    estimatedValueTotal: 0,
+  });
 });

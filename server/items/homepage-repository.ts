@@ -30,7 +30,18 @@ export interface HomepageItemRow {
   hasEvidence: boolean;
 }
 
+export interface HomepageOutcomeCounts {
+  live: number;
+  cleared: number;
+  /** Sum of a real recorded sale price -- always 0 today: no sale-price field exists anywhere yet. */
+  realisedTotal: number;
+  /** Sum of computeValuation's buyItNowPrice across every active (non-terminal) item that has one. */
+  estimatedValueTotal: number;
+}
+
 export interface HomepageRepository {
   /** Items still in an active (non-terminal) status, most recently updated first. */
   listActiveItems(): Promise<HomepageItemRow[]>;
+  /** Counts and totals outside the active set, plus the active set's estimated value. */
+  getOutcomeCounts(): Promise<HomepageOutcomeCounts>;
 }

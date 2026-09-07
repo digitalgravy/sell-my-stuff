@@ -4,6 +4,7 @@ import { comparableSales, itemFacts, items, jobs } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 
+import type { ComparableSale } from './item-detail-repository';
 import type {
   HomepageItemFacts,
   HomepageItemRow,
@@ -11,6 +12,7 @@ import type {
   JobStateValue,
 } from './homepage-repository';
 import type { ItemStatusValue } from './research-repository';
+import { computeValuation } from './valuation';
 
 // The only statuses any worker currently transitions an item into or leaves
 // it in (see inspect-images-job.ts); later stages (VALUING, READY_FOR_REVIEW,
@@ -101,6 +103,75 @@ export class PostgresHomepageRepository implements HomepageRepository {
       lastError: jobInfoByItem.get(row.id)?.lastError,
       hasEvidence: itemIdsWithEvidence.has(row.id),
     }));
+  }
+
+  async getOutcomeCounts(): Promise<{
+    live: number;
+    cleared: number;
+    realisedTotal: number;
+    estimatedValueTotal: number;
+  }> {
+    const database = getDatabase();
+    const [liveRows, clearedRows, activeItemRows] = await Promise.all([
+      database.select({ id: items.id }).from(items).where(eq(items.status, 'LIVE')),
+      database
+        .select({ id: items.id })
+        .from(items)
+        .where(inArray(items.status, ['SOLD', 'COMPLETE'])),
+      database.select({ id: items.id }).from(items).where(inArray(items.status, ACTIVE_STATUSES)),
+    ]);
+
+    const estimatedValueTotal = await this.#sumEstimatedValue(
+      database,
+      activeItemRows.map((row) => row.id),
+    );
+
+    return {
+      live: liveRows.length,
+      cleared: clearedRows.length,
+      // No sale-price field exists anywhere in the schema yet -- honestly
+      // always 0 until a real sale-recording flow exists to sum.
+      realisedTotal: 0,
+      estimatedValueTotal,
+    };
+  }
+
+  async #sumEstimatedValue(
+    database: ReturnType<typeof getDatabase>,
+    itemIds: string[],
+  ): Promise<number> {
+    if (itemIds.length === 0) return 0;
+    const saleRows = await database
+      .select({
+        itemId: comparableSales.itemId,
+        title: comparableSales.title,
+        match: comparableSales.match,
+        soldAt: comparableSales.soldAt,
+        price: comparableSales.price,
+        excluded: comparableSales.excluded,
+      })
+      .from(comparableSales)
+      .where(inArray(comparableSales.itemId, itemIds));
+
+    const salesByItem = new Map<string, ComparableSale[]>();
+    for (const row of saleRows) {
+      const list = salesByItem.get(row.itemId) ?? [];
+      list.push({
+        title: row.title,
+        match: row.match,
+        soldAt: row.soldAt,
+        price: row.price,
+        excluded: row.excluded,
+      });
+      salesByItem.set(row.itemId, list);
+    }
+
+    let total = 0;
+    for (const sales of salesByItem.values()) {
+      const pricing = computeValuation(sales);
+      if (pricing) total += pricing.buyItNowPrice;
+    }
+    return total;
   }
 
   async #loadItemIdsWithEvidence(

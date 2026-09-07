@@ -11,7 +11,18 @@ void test('returns an empty snapshot while persistent capture is disabled', asyn
     const response = await GET(new Request('http://localhost/api/items/homepage'));
 
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { attention: [], working: [] });
+    assert.deepEqual(await response.json(), {
+      attention: [],
+      working: [],
+      stats: {
+        ready: 0,
+        inProgress: 0,
+        live: 0,
+        cleared: 0,
+        realisedTotal: 0,
+        estimatedValueTotal: 0,
+      },
+    });
   } finally {
     if (previous === undefined) delete process.env.CAPTURE_API_ENABLED;
     else process.env.CAPTURE_API_ENABLED = previous;

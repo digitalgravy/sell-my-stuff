@@ -22,11 +22,36 @@ import { ActivityBadge } from '@/components/activity-badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isSupportedImage } from '@/lib/capture-policy';
-import type { AttentionItem, WorkingItem } from '@/server/items/homepage-snapshot';
+import type {
+  AttentionItem,
+  HomepageStats,
+  WorkingItem,
+} from '@/server/items/homepage-snapshot';
 
 type Photo = { id: string; name: string; url: string; file: File };
 type HomepageStatus = 'loading' | 'ready' | 'error';
-type HomepageSnapshot = { attention: AttentionItem[]; working: WorkingItem[] };
+type HomepageSnapshot = {
+  attention: AttentionItem[];
+  working: WorkingItem[];
+  stats: HomepageStats;
+};
+
+const EMPTY_STATS: HomepageStats = {
+  ready: 0,
+  inProgress: 0,
+  live: 0,
+  cleared: 0,
+  realisedTotal: 0,
+  estimatedValueTotal: 0,
+};
+
+function formatGBP(amount: number): string {
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  }).format(amount);
+}
 
 function relativeTime(isoTimestamp: string): string {
   return formatDistanceToNowStrict(new Date(isoTimestamp), {
@@ -59,6 +84,7 @@ export default function Home() {
   const [uploadError, setUploadError] = useState<string>();
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [working, setWorking] = useState<WorkingItem[]>([]);
+  const [stats, setStats] = useState<HomepageStats>(EMPTY_STATS);
   const [homepageStatus, setHomepageStatus] =
     useState<HomepageStatus>('loading');
 
@@ -68,6 +94,7 @@ export default function Home() {
       .then((data) => {
         setAttention(data.attention);
         setWorking(data.working);
+        setStats(data.stats);
         setHomepageStatus('ready');
       })
       .catch(() => setHomepageStatus('error'));
@@ -80,6 +107,7 @@ export default function Home() {
         if (cancelled) return;
         setAttention(data.attention);
         setWorking(data.working);
+        setStats(data.stats);
         setHomepageStatus('ready');
       })
       .catch(() => {
@@ -101,6 +129,7 @@ export default function Home() {
         .then((data) => {
           setAttention(data.attention);
           setWorking(data.working);
+          setStats(data.stats);
           setHomepageStatus('ready');
         })
         .catch(() => undefined);
@@ -287,18 +316,45 @@ export default function Home() {
             </h1>
           </div>
 
-          <dl className="grid grid-cols-3 gap-6 sm:gap-9">
-            {[
-              ['14', 'items cleared'],
-              ['£742', 'realised'],
-              ['£1,180', 'in progress'],
-            ].map(([value, label]) => (
-              <div key={label} className="flex flex-col sm:items-end">
+          <dl className="flex flex-wrap justify-end gap-6 sm:gap-9">
+            {(
+              [
+                { value: stats.ready, label: 'items ready', display: String(stats.ready), alwaysShow: false },
+                {
+                  value: stats.inProgress,
+                  label: 'items in progress',
+                  display: String(stats.inProgress),
+                  alwaysShow: false,
+                },
+                { value: stats.live, label: 'items live', display: String(stats.live), alwaysShow: false },
+                {
+                  value: stats.cleared,
+                  label: 'items cleared',
+                  display: String(stats.cleared),
+                  alwaysShow: false,
+                },
+                {
+                  value: stats.estimatedValueTotal,
+                  label: 'estimated value',
+                  display: formatGBP(stats.estimatedValueTotal),
+                  alwaysShow: true,
+                },
+                {
+                  value: stats.realisedTotal,
+                  label: 'realised',
+                  display: formatGBP(stats.realisedTotal),
+                  alwaysShow: true,
+                },
+              ] as const
+            )
+              .filter((stat) => stat.alwaysShow || stat.value > 0)
+              .map((stat) => (
+              <div key={stat.label} className="flex flex-col sm:items-end">
                 <dt className="order-2 mt-0.5 text-[11px] text-muted-foreground sm:text-xs">
-                  {label}
+                  {stat.label}
                 </dt>
-                <dd className="order-1 text-lg font-semibold tracking-[-0.035em] sm:text-2xl">
-                  {value}
+                <dd className="order-1 text-lg font-semibold tracking-[-0.035em] tabular-nums sm:text-2xl">
+                  {stat.display}
                 </dd>
               </div>
             ))}
