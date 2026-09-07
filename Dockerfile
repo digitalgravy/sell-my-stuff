@@ -8,7 +8,9 @@ RUN npm test && npm run typecheck && npm run lint && npm run build
 
 FROM node:24-slim AS runtime
 
+ARG GIT_COMMIT
 ENV NODE_ENV=production
+ENV GIT_COMMIT=$GIT_COMMIT
 WORKDIR /app
 COPY --from=build /app/public ./public
 COPY --from=build --chown=node:node /app/.next/standalone ./

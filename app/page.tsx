@@ -283,12 +283,6 @@ export default function Home() {
           >
             <Menu />
           </Button>
-          <button
-            className="hidden size-8 place-items-center rounded-full border border-border bg-card text-[11px] font-semibold md:grid"
-            aria-label="Open settings"
-          >
-            SM
-          </button>
         </div>
       </header>
 

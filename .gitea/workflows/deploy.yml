@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4.2.2
 
       - name: Build and run quality gates
-        run: docker build -t "$IMAGE_REPOSITORY:${{ gitea.sha }}" .
+        run: docker build --build-arg GIT_COMMIT="${{ gitea.sha }}" -t "$IMAGE_REPOSITORY:${{ gitea.sha }}" .
 
       - name: Push image
         run: |

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Geist_Mono, Inter } from 'next/font/google';
+import { Footer } from '@/components/footer';
 import './globals.css';
 
 const geistMono = Geist_Mono({
@@ -52,7 +53,10 @@ export default function RootLayout({
       lang="en"
       className={`${geistMono.variable} ${inter.variable}`}
     >
-      <body className={`${inter.className} antialiased`}>{children}</body>
+      <body className={`${inter.className} antialiased`}>
+        {children}
+        <Footer />
+      </body>
     </html>
   );
 }
