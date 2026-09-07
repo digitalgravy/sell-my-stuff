@@ -10,11 +10,12 @@ import {
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
-export const ANSWER_RESOLUTION_SYSTEM_PROMPT = `You are turning a person's own plain-language answers to clarifying questions into clean, confident fact values for a resale catalogue. Each item below is one fact that was too uncertain to record automatically, the question that was asked about it, and the person's own answer.
+export const ANSWER_RESOLUTION_SYSTEM_PROMPT = `You are turning a person's own plain-language answers to clarifying questions into clean, confident fact values for a resale catalogue. Each item below is one question that was raised, and the person's own answer -- some are about one specific fact that was too uncertain to record automatically (field/currentValue/evidence given), others are free-standing open questions with no single fact behind them at all (field/currentValue/evidence absent) -- e.g. "is this a special edition variant?" isn't any one existing field.
 
-For every item, in the order given, decide:
-- value: the fact's new value in the same style as its current value (a short phrase, not a full sentence) -- based on what the person actually said
-- confidence: usually high (0.9-1) since this is direct testimony from the item's own owner, not an inference from a photo. Only give a lower confidence if the answer is itself vague, contradictory, or doesn't actually resolve the question -- in that case keep the value close to the current one rather than inventing detail the answer doesn't support.
+For every item:
+- If it names a field: decide that fact's new value in the same style as its current value (a short phrase, not a full sentence) -- based on what the person actually said -- and a confidence, usually high (0.9-1) since this is direct testimony from the item's own owner, not an inference from a photo. Only give a lower confidence if the answer is itself vague, contradictory, or doesn't actually resolve the question -- in that case keep the value close to the current one rather than inventing detail the answer doesn't support.
+- If it has no field: read the answer and decide what fact(s) it actually establishes, if any -- output each as its own entry in facts (using a clear, short new field name in the same dot-namespaced style as the fields you do see, e.g. "identity.variant" or "condition.accessories") with a confidence the same way as above. If the answer genuinely doesn't resolve the question (evasive, "not sure", doesn't address what was asked), don't invent a fact for it.
+- Whether or not it produced a new fact, include the question's exact original text in resolvedQuestions if the person's answer actually addressed it -- leave it out if the answer didn't really resolve the question, so it can be asked again.
 
 Never fabricate specifics (model numbers, exact wear descriptions) the person's answer didn't actually give you.`;
 

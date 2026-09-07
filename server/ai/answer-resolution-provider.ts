@@ -1,9 +1,16 @@
 import { z } from 'zod';
 
-/** One low-confidence fact plus the user's own plain-language answer to a question about it. */
+/**
+ * Either a specific low-confidence fact plus the user's answer to a
+ * question about it (field/currentValue/evidence all present), or a
+ * free-standing open question with no single fact behind it at all (e.g.
+ * "is this a special edition variant?" isn't any one existing field) --
+ * field/currentValue/evidence are all absent in that case, and the model's
+ * job is to figure out which fact(s), if any, the answer actually touches.
+ */
 export interface FactAnswerInput {
-  field: string;
-  currentValue: string;
+  field?: string;
+  currentValue?: string;
   evidence?: string;
   question: string;
   answer: string;
@@ -17,7 +24,16 @@ export const resolvedFactSchema = z.object({
 });
 
 export const answerResolutionResultSchema = z.object({
+  /** May include fields that weren't part of the input at all -- an open question's answer can reveal a fact (e.g. a variant name) nothing had asked about directly. */
   facts: z.array(resolvedFactSchema),
+  /**
+   * The exact `question` text (verbatim, from the input) of every
+   * free-standing open question this batch actually resolved -- removed
+   * from item_facts' open_questions list so it stops being asked again.
+   * A question left out here (answer was vague, didn't actually address
+   * it) stays on the list.
+   */
+  resolvedQuestions: z.array(z.string().min(1)).default([]),
 });
 
 export type ResolvedFact = z.infer<typeof resolvedFactSchema>;

@@ -71,7 +71,11 @@ import {
   relativeTime,
   statusLabel,
 } from './format';
-import { ResolveFactsDialog, type FactAnswerSubmission } from './resolve-facts-dialog';
+import {
+  ResolveFactsDialog,
+  type FactAnswerSubmission,
+  type OpenQuestionForDialog,
+} from './resolve-facts-dialog';
 
 type LoadStatus = 'loading' | 'ready' | 'error' | 'not-found';
 
@@ -82,6 +86,17 @@ const FACTS_SECTION_ID = 'facts-section';
 // would have raised a question rather than being asserted outright, so it's
 // the right line for "worth a second look" here too.
 const LOW_CONFIDENCE_THRESHOLD = 0.7;
+
+/** The identity.open_questions/condition.open_questions facts are a JSON string array, not tied to any single field -- pulled out into one row per question for the resolve-facts modal. */
+function extractOpenQuestions(
+  facts: ItemDetailFact[] | undefined,
+  field: string,
+  source: OpenQuestionForDialog['source'],
+): OpenQuestionForDialog[] {
+  const value = facts?.find((fact) => fact.field === field)?.value;
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string').map((text) => ({ source, text }));
+}
 
 class ItemNotFoundError extends Error {}
 
@@ -609,6 +624,10 @@ export function ItemDetailView({
         open={resolveFactsOpen}
         onOpenChange={setResolveFactsOpen}
         facts={(detail?.facts ?? []).filter((fact) => fact.confidence < LOW_CONFIDENCE_THRESHOLD)}
+        openQuestions={[
+          ...extractOpenQuestions(detail?.facts, 'identity.open_questions', 'identity'),
+          ...extractOpenQuestions(detail?.facts, 'condition.open_questions', 'condition'),
+        ]}
         onSubmit={resolveAnswers}
         submitting={resolvingAnswers}
       />

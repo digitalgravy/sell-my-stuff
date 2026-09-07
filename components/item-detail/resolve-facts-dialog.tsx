@@ -40,30 +40,57 @@ function questionForFact(fact: ItemDetailFact): string {
 }
 
 export interface FactAnswerSubmission {
-  field: string;
+  /** Absent for a free-standing open question with no single fact behind it. */
+  field?: string;
   question: string;
   answer: string;
+}
+
+export interface OpenQuestionForDialog {
+  source: 'identity' | 'condition';
+  text: string;
+}
+
+interface Row {
+  key: string;
+  field?: string;
+  question: string;
+  meta: string;
 }
 
 export function ResolveFactsDialog({
   open,
   onOpenChange,
   facts,
+  openQuestions,
   onSubmit,
   submitting,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Low-confidence facts -- each tied to one specific field. */
   facts: ItemDetailFact[];
+  /** Free-standing open questions with no single fact behind them (identity.open_questions/condition.open_questions). */
+  openQuestions: OpenQuestionForDialog[];
   onSubmit: (answers: FactAnswerSubmission[]) => void;
   submitting: boolean;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  const questions = useMemo(
-    () => facts.map((fact) => ({ fact, question: questionForFact(fact) })),
-    [facts],
-  );
+  const rows = useMemo((): Row[] => [
+    ...facts.map((fact): Row => ({
+      key: `field:${fact.field}`,
+      field: fact.field,
+      question: questionForFact(fact),
+      meta: `Currently recorded as "${formatFactValue(fact.value)}"${fact.evidence ? ` -- ${fact.evidence}` : ''} (${Math.round(fact.confidence * 100)}% confidence)`,
+    })),
+    ...openQuestions.map((oq, index): Row => ({
+      key: `question:${index}`,
+      field: undefined,
+      question: oq.text,
+      meta: oq.source === 'identity' ? 'Raised during identification.' : 'Raised during condition assessment.',
+    })),
+  ], [facts, openQuestions]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) setAnswers({});
@@ -71,11 +98,11 @@ export function ResolveFactsDialog({
   };
 
   const handleSubmit = () => {
-    const submissions: FactAnswerSubmission[] = questions
-      .map(({ fact, question }) => ({
-        field: fact.field,
-        question,
-        answer: (answers[fact.field] ?? '').trim(),
+    const submissions: FactAnswerSubmission[] = rows
+      .map((row) => ({
+        field: row.field,
+        question: row.question,
+        answer: (answers[row.key] ?? '').trim(),
       }))
       .filter((submission) => submission.answer.length > 0);
     if (submissions.length === 0) return;
@@ -89,7 +116,7 @@ export function ResolveFactsDialog({
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
-            {facts.length} thing{facts.length === 1 ? '' : 's'} to confirm
+            {rows.length} thing{rows.length === 1 ? '' : 's'} to confirm
           </DialogTitle>
           <DialogDescription>
             Answer in your own words -- your answers are sent together to turn into clean,
@@ -98,21 +125,17 @@ export function ResolveFactsDialog({
         </DialogHeader>
 
         <div className="space-y-6">
-          {questions.map(({ fact, question }) => {
-            const enumField = getEnumFactField(fact.field);
+          {rows.map((row) => {
+            const enumField = row.field ? getEnumFactField(row.field) : undefined;
             return (
-              <div key={fact.field} className="space-y-2">
-                <p className="text-sm font-medium">{question}</p>
-                <p className="text-xs text-muted-foreground">
-                  Currently recorded as &ldquo;{formatFactValue(fact.value)}&rdquo;
-                  {fact.evidence ? ` -- ${fact.evidence}` : ''} (
-                  {Math.round(fact.confidence * 100)}% confidence)
-                </p>
+              <div key={row.key} className="space-y-2">
+                <p className="text-sm font-medium">{row.question}</p>
+                <p className="text-xs text-muted-foreground">{row.meta}</p>
                 {enumField ? (
                   <RadioGroup
-                    value={answers[fact.field] ?? ''}
+                    value={answers[row.key] ?? ''}
                     onValueChange={(value) =>
-                      setAnswers((current) => ({ ...current, [fact.field]: value ?? '' }))
+                      setAnswers((current) => ({ ...current, [row.key]: value ?? '' }))
                     }
                   >
                     {enumField.options.map((option) => (
@@ -129,9 +152,9 @@ export function ResolveFactsDialog({
                   <Textarea
                     rows={2}
                     placeholder="Your answer"
-                    value={answers[fact.field] ?? ''}
+                    value={answers[row.key] ?? ''}
                     onChange={(event) =>
-                      setAnswers((current) => ({ ...current, [fact.field]: event.target.value }))
+                      setAnswers((current) => ({ ...current, [row.key]: event.target.value }))
                     }
                   />
                 )}

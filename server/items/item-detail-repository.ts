@@ -158,7 +158,8 @@ export type RegenerateResearchOutcome = { ok: true } | { ok: false; reason: stri
 export type ResolveFactAnswersOutcome = { ok: true } | { ok: false; reason: string };
 
 export interface FactAnswerSubmission {
-  field: string;
+  /** Absent for a free-standing open question with no single fact behind it (identity.open_questions/condition.open_questions) -- see FactAnswerInput. */
+  field?: string;
   /** The question text the user actually saw and answered -- sent to the LLM alongside the answer for context. */
   question: string;
   answer: string;

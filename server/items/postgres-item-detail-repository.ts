@@ -21,7 +21,10 @@ import { getAnthropicAnswerResolutionProvider } from '@/server/ai/anthropic-answ
 import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-comparable-match-provider';
 import { estimateCostUsd, usdToGbp } from '@/server/ai/pricing';
 import { getDatabase } from '@/server/db/client';
-import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
+import {
+  IDENTIFICATION_CONFIDENCE_THRESHOLD,
+  INSPECT_IMAGES_JOB_TYPE,
+} from '@/server/jobs/inspect-images-job';
 import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from '@/server/jobs/research-comparable-sales-job';
 
 import {
@@ -743,6 +746,12 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     if (answers.length === 0) return { ok: false, reason: 'No answers were given' };
     const database = getDatabase();
 
+    const [item] = await database
+      .select({ status: items.status, revision: items.revision })
+      .from(items)
+      .where(eq(items.id, itemId));
+    if (!item) return { ok: false, reason: 'Item not found' };
+
     const rows = await database
       .select({
         field: itemFacts.field,
@@ -755,11 +764,14 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     const factByField = new Map(rows.map((row) => [row.field, row]));
 
     const provider = getAnthropicAnswerResolutionProvider();
+    // field/currentValue/evidence are absent for a free-standing open
+    // question (identity.open_questions/condition.open_questions) that
+    // isn't about any single existing fact -- see FactAnswerInput.
     const inputs: FactAnswerInput[] = answers.map((answer) => {
-      const existing = factByField.get(answer.field);
+      const existing = answer.field ? factByField.get(answer.field) : undefined;
       return {
         field: answer.field,
-        currentValue: existing ? formatFactValueForPrompt(existing.value) : '(not yet recorded)',
+        currentValue: existing ? formatFactValueForPrompt(existing.value) : undefined,
         evidence: existing?.evidence ?? undefined,
         question: answer.question,
         answer: answer.answer,
@@ -799,20 +811,19 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       previousConfidence?: number;
       confidence: number;
     }[] = [];
+    // Tracks confidence per field as the batch applies, seeded from what's
+    // actually saved -- used below to decide whether identity is now
+    // confident enough to leave NEEDS_INFORMATION, without a second
+    // round-trip to re-read what this same transaction just wrote.
+    const confidenceByField = new Map(rows.map((row) => [row.field, row.confidence]));
+
     await database.transaction(async (tx) => {
-      for (const resolved of outcome.result.facts) {
-        const existing = factByField.get(resolved.field);
-        const newValue = JSON.stringify(resolved.value);
+      const upsertFact = async (field: string, rawValue: unknown, confidence: number) => {
+        const existing = factByField.get(field);
+        const newValue = JSON.stringify(rawValue);
         await tx
           .insert(itemFacts)
-          .values({
-            id: randomUUID(),
-            itemId,
-            field: resolved.field,
-            value: newValue,
-            confidence: resolved.confidence,
-            origin: 'user_confirmed',
-          })
+          .values({ id: randomUUID(), itemId, field, value: newValue, confidence, origin: 'user_confirmed' })
           .onConflictDoUpdate({
             target: [itemFacts.itemId, itemFacts.field],
             set: {
@@ -823,14 +834,62 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
             },
           });
         changes.push({
-          field: resolved.field,
+          field,
           previousValue: existing?.value ?? null,
           newValue,
           previousConfidence: existing?.confidence,
-          confidence: resolved.confidence,
+          confidence,
         });
+        confidenceByField.set(field, confidence);
+      };
+
+      for (const resolved of outcome.result.facts) {
+        await upsertFact(resolved.field, resolved.value, resolved.confidence);
       }
+
+      // Remove every question this batch actually resolved from whichever
+      // open_questions list it came from -- otherwise it nags forever even
+      // after being answered, and (for identity.open_questions) blocks
+      // NEEDS_INFORMATION from ever clearing on its own.
+      let remainingIdentityQuestions = parseStringArray(factByField.get('identity.open_questions')?.value);
+      for (const questionsField of ['identity.open_questions', 'condition.open_questions'] as const) {
+        const existing = factByField.get(questionsField);
+        if (!existing) continue;
+        const current = parseStringArray(existing.value);
+        const remaining = current.filter((q) => !outcome.result.resolvedQuestions.includes(q));
+        if (remaining.length !== current.length) {
+          await upsertFact(questionsField, remaining, 1);
+        }
+        if (questionsField === 'identity.open_questions') remainingIdentityQuestions = remaining;
+      }
+
       await setItemEventDetail(eventId, { changes }, tx);
+
+      // Mirrors inspect-images-job.ts's own readiness gate, re-run against
+      // what this batch just saved -- an item stuck at NEEDS_INFORMATION
+      // can now leave it on its own once identity has no open questions
+      // left and no identity field is still under-confident, rather than
+      // requiring a whole fresh (and separately paid-for) identification
+      // attempt just to notice what the user already just supplied.
+      if (item.status === 'NEEDS_INFORMATION') {
+        const identityConfident = [...IDENTITY_FACT_FIELDS].every((field) => {
+          const confidence = confidenceByField.get(field);
+          return confidence === undefined || confidence >= IDENTIFICATION_CONFIDENCE_THRESHOLD;
+        });
+        if (remainingIdentityQuestions.length === 0 && identityConfident) {
+          const newRevision = item.revision + 1;
+          await tx
+            .update(items)
+            .set({ status: 'RESEARCHING', revision: newRevision, updatedAt: new Date() })
+            .where(eq(items.id, itemId));
+          await tx.insert(jobs).values({
+            id: randomUUID(),
+            itemId,
+            type: RESEARCH_COMPARABLE_SALES_JOB_TYPE,
+            idempotencyKey: `${RESEARCH_COMPARABLE_SALES_JOB_TYPE}:${itemId}:${newRevision}`,
+          });
+        }
+      }
     });
 
     return { ok: true };

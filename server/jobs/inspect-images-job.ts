@@ -25,7 +25,12 @@ export const DEFAULT_MAX_ATTEMPTS = 5;
 export const DEFAULT_JOB_LEASE_MS = 15 * 60 * 1000;
 export const BASE_RETRY_DELAY_MS = 5_000;
 export const MAX_RETRY_DELAY_MS = 5 * 60 * 1000;
-const IDENTIFICATION_CONFIDENCE_THRESHOLD = 0.7;
+// Exported for postgres-item-detail-repository.ts's resolveFactAnswers,
+// which needs to re-run this exact same readiness check after a batch of
+// answers is saved, to decide whether the item can now leave
+// NEEDS_INFORMATION on its own rather than waiting for another full
+// identification attempt.
+export const IDENTIFICATION_CONFIDENCE_THRESHOLD = 0.7;
 
 export interface InspectImagesJobDependencies {
   jobs: ResearchJobRepository;
