@@ -10,13 +10,19 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
 function withStubbedFetch(
   handler: (input: string, init?: RequestInit) => Promise<Response>,
   run: () => Promise<void>,
 ): Promise<void> {
   const original = globalThis.fetch;
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
-    handler(String(input), init)) as typeof fetch;
+    handler(requestUrl(input), init)) as typeof fetch;
   return run().finally(() => {
     globalThis.fetch = original;
   });
