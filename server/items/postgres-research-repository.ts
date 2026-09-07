@@ -2,16 +2,23 @@ import { randomUUID } from 'node:crypto';
 
 import { eq, inArray, sql } from 'drizzle-orm';
 
-import { identificationRuns, itemFacts, items, jobs, photos } from '@/db/schema';
+import { comparableSales, identificationRuns, itemFacts, items, jobs, photos } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 
+import {
+  completeMatchClassificationRun as completeMatchClassificationRunRow,
+  startMatchClassificationRun as startMatchClassificationRunRow,
+} from './match-classification-runs';
 import type {
   ClaimedJob,
+  ComparableSaleInput,
   IdentificationFactInput,
   IdentificationRunCompleteInput,
   IdentificationRunStartInput,
   ItemPhotoForResearch,
   ItemStatusValue,
+  MatchClassificationRunCompleteInput,
+  MatchClassificationRunStartInput,
   ResearchJobRepository,
 } from './research-repository';
 
@@ -234,5 +241,34 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
         idempotencyKey: input.idempotencyKey,
       })
       .onConflictDoNothing({ target: jobs.idempotencyKey });
+  }
+
+  async saveComparableSales(itemId: string, sales: ComparableSaleInput[]): Promise<void> {
+    if (sales.length === 0) return;
+    const database = getDatabase();
+    await database.insert(comparableSales).values(
+      sales.map((sale) => ({
+        id: randomUUID(),
+        itemId,
+        title: sale.title,
+        match: sale.match,
+        soldAt: sale.soldAt,
+        price: sale.price,
+        excluded: sale.excluded ?? false,
+        excludedReason: sale.excludedReason ?? null,
+      })),
+    );
+  }
+
+  async startMatchClassificationRun(
+    entry: MatchClassificationRunStartInput,
+  ): Promise<{ runId: string }> {
+    return startMatchClassificationRunRow(entry);
+  }
+
+  async completeMatchClassificationRun(
+    entry: MatchClassificationRunCompleteInput,
+  ): Promise<void> {
+    return completeMatchClassificationRunRow(entry);
   }
 }

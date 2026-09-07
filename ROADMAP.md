@@ -14,9 +14,10 @@ This roadmap preserves completed history. Items move between sections as evidenc
   - [x] First-login bootstrap through the noVNC human-takeover view — completed for real,
         2026-09-06: a genuine authenticated eBay session now exists in the persistent profile,
         verified by `resume-agent` re-checking the actual resulting page, not just trusted.
-  - [ ] `EbayProductResearchBrowserProvider` (the `ComparableSalesProvider` port from `BRIEF.md`) —
-        navigate Seller Hub Product Research, extract comparable sales into the `ComparableRecord` shape.
-  - [ ] `research_comparable_sales` job type on the `sell-my-stuff` side, reusing the existing
+  - [x] `EbayBrowserResearchProvider` (the `ComparableSalesProvider` port from `BRIEF.md`) —
+        calls sell-browser's Sold/Completed search over HTTP; see `PROJECT_STATUS.md` for detail
+        including the not-yet-live-verified caveat.
+  - [x] `research_comparable_sales` job type on the `sell-my-stuff` side, reusing the existing
         `jobs`-table claim/lease pattern, feeding the already-built Evidence tab.
   - [x] Provision the durable profile volume through Overseer (`container.volumes`,
         `hostPath`/`containerPath`/`readOnly` — the same field `sell-my-stuff` itself uses).

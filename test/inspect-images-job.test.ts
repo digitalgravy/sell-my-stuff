@@ -108,6 +108,14 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
   async enqueueJob(input: { itemId: string; type: string; idempotencyKey: string }) {
     this.enqueued.push(input);
   }
+
+  async saveComparableSales() {}
+
+  async startMatchClassificationRun() {
+    return { runId: 'match-run-unused' };
+  }
+
+  async completeMatchClassificationRun() {}
 }
 
 class MemoryObjectStore implements ObjectStore {

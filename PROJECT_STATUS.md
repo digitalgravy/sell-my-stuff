@@ -209,14 +209,36 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
         WebSocket upgrades by default (broke the VNC connection until
         fixed); a container redeploy resets the in-memory session
         state to `IDLE` (expected, not a bug).
-  - [ ] `EbayProductResearchBrowserProvider` (the `ComparableSalesProvider`
-        port from `BRIEF.md`) against Seller Hub Product Research —
-        confirmed accessible with the project owner's authenticated
-        session and the strongest known evidence source (see
-        `docs/research/ebay-capabilities-2026-09-03.md`).
-  - [ ] `research_comparable_sales` job type here, reusing the existing
+  - [x] `EbayBrowserResearchProvider` (the `ComparableSalesProvider` port
+        from `BRIEF.md`; named for what it actually does since the pivot
+        away from Product Research documented in `sell-browser`'s own
+        README) — `server/research/ebay-browser-research-provider.ts`
+        calls sell-browser's `POST /research/sold-listings` over HTTP,
+        claiming its shared session (`/session/agent-claim`) only when
+        idle and always releasing what it claimed. Any failure —
+        unconfigured (`SELL_BROWSER_BASE_URL` unset), a busy/blocked
+        session, a network error, an unexpected response shape — resolves
+        to `{ outcome: 'unavailable', reason }`, never a thrown error, so
+        a real problem here can only ever fall back to the existing
+        manual-link path, not break the pipeline. Not yet verified live
+        end-to-end: `sell-browser.26fe.uk` is LAN-only and unreachable
+        from the dev machine this was built on (confirmed via a TLS SNI
+        failure, not a code-level issue) — verified instead via the exact
+        request/response contract read directly from `sell-browser`'s own
+        route source, a full unit-test suite stubbing `fetch`
+        (`test/ebay-browser-research-provider.test.ts`), and the
+        job-level fallback behaviour
+        (`test/research-comparable-sales-job.test.ts`). Worth a real
+        live check once reachable from inside the LAN.
+  - [x] `research_comparable_sales` job type here, reusing the existing
         `jobs`-table claim/lease pattern, feeding the already-built
-        Evidence tab on the item detail page.
+        Evidence tab on the item detail page. Sales it finds go through
+        the same match classifier as a manual capture import
+        (`server/items/comparable-match.ts`) before being trusted as
+        evidence, with the same pending/resolved Build-log cost tracking
+        as every other AI call in this app. Falls back to the pre-existing
+        "build a manual search link" behaviour whenever the browser
+        provider is unavailable or finds nothing.
 
 ## Secrets access
 

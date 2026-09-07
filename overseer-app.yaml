@@ -41,6 +41,12 @@ container:
     # process crashes on startup and, by design, takes the whole
     # container down with it (see entrypoint.sh's comment).
     ANTHROPIC_API_KEY: ${secret:ANTHROPIC_API_KEY}
+    # sell-browser's internal base URL (its own project, LAN-only --
+    # see that repo's README). Not a secret: it's an internal hostname,
+    # not a credential. Absent this, research_comparable_sales_job just
+    # skips straight to the manual search-link fallback -- see that
+    # job's own doc comment.
+    SELL_BROWSER_BASE_URL: https://sell-browser.26fe.uk
 
 network:
   hostname: sell

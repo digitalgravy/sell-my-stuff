@@ -1,6 +1,8 @@
+import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-comparable-match-provider';
 import { getAnthropicVisionProvider } from '@/server/ai/anthropic-vision-provider';
 import { getPhotoConverter } from '@/server/ai/heic-photo-converter';
 import { PostgresResearchJobRepository } from '@/server/items/postgres-research-repository';
+import { getEbayBrowserResearchProvider } from '@/server/research/ebay-browser-research-provider';
 import { getFileObjectStore } from '@/server/storage/file-object-store';
 
 import { runInspectImagesJob } from './inspect-images-job';
@@ -18,6 +20,8 @@ async function main() {
     objectStore: getFileObjectStore(),
     vision: getAnthropicVisionProvider(),
     photoConverter: getPhotoConverter(),
+    browserProvider: getEbayBrowserResearchProvider(),
+    matchProvider: getAnthropicComparableMatchProvider(),
   };
 
   console.log('job worker started (inspect_images, research_comparable_sales)');

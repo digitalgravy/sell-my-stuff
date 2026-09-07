@@ -49,6 +49,33 @@ export interface IdentificationRunCompleteInput {
   completedAt: Date;
 }
 
+export type MatchClassificationRunOutcome = 'succeeded' | 'failed';
+
+export interface MatchClassificationRunStartInput {
+  itemId: string;
+  provider: string;
+  model: string;
+  listingCount: number;
+}
+
+export interface MatchClassificationRunCompleteInput {
+  runId: string;
+  outcome: MatchClassificationRunOutcome;
+  inputTokens?: number;
+  outputTokens?: number;
+  response?: unknown;
+  errorMessage?: string;
+}
+
+export interface ComparableSaleInput {
+  title: string;
+  match: string;
+  soldAt: string;
+  price: number;
+  excluded?: boolean;
+  excludedReason?: string;
+}
+
 export type ItemStatusValue =
   | 'INBOX'
   | 'IDENTIFYING'
@@ -92,4 +119,11 @@ export interface ResearchJobRepository {
   getIdentityFacts(itemId: string): Promise<{ field: string; value: string }[]>;
   /** No-ops (rather than erroring) if idempotencyKey already exists -- callers may safely re-enqueue on retry. */
   enqueueJob(input: { itemId: string; type: string; idempotencyKey: string }): Promise<void>;
+  /** Imports comparable sales found by automated browser research -- same shape as a capture import, but with no source capture row to attribute them to. */
+  saveComparableSales(itemId: string, sales: ComparableSaleInput[]): Promise<void>;
+  /** Logged before the request goes to the match classifier, so the Build log can show a pending entry -- see startIdentificationRun. */
+  startMatchClassificationRun(
+    entry: MatchClassificationRunStartInput,
+  ): Promise<{ runId: string }>;
+  completeMatchClassificationRun(entry: MatchClassificationRunCompleteInput): Promise<void>;
 }
