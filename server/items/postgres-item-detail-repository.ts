@@ -458,6 +458,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         hasIdentityFacts,
         hasConditionFacts,
         hasEvidence: comparableSaleList.length > 0,
+        isCheckingEvidence: matchRunRows.some((row) => row.outcome === null),
       }),
       attention: deriveAttention({
         status: item.status,

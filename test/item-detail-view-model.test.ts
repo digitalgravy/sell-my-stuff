@@ -61,6 +61,30 @@ void test('derivePhases marks Researched pending while status is RESEARCHING wit
   );
 });
 
+void test('derivePhases says "checking sold listings" instead of "ready to search eBay" while a match run is in flight', () => {
+  // Real case caught live: automated research had already found 60 sold
+  // listings and a match-classification call was pending -- "Ready to
+  // search eBay" wrongly implied the user still needed to do something.
+  const checking = derivePhases({
+    status: 'RESEARCHING',
+    hasIdentityFacts: true,
+    hasConditionFacts: true,
+    hasEvidence: false,
+    isCheckingEvidence: true,
+  }).find((p) => p.key === 'researched');
+  assert.equal(checking?.state, 'pending');
+  assert.equal(checking?.detail, 'Checking sold listings against your item');
+
+  const notChecking = derivePhases({
+    status: 'RESEARCHING',
+    hasIdentityFacts: true,
+    hasConditionFacts: true,
+    hasEvidence: false,
+    isCheckingEvidence: false,
+  }).find((p) => p.key === 'researched');
+  assert.equal(notChecking?.detail, 'Ready to search eBay');
+});
+
 void test('derivePhases marks Assessed done only when condition facts actually exist', () => {
   assert.equal(
     derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false }).find(

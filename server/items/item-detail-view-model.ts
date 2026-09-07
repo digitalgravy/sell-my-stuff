@@ -22,6 +22,8 @@ export function derivePhases(input: {
   hasIdentityFacts: boolean;
   hasConditionFacts: boolean;
   hasEvidence: boolean;
+  /** A match-classification run is currently in flight for this item -- sold listings were already found and imported is about to happen once the LLM verdict comes back, not "waiting on you to go search eBay". */
+  isCheckingEvidence?: boolean;
 }): PhaseInfo[] {
   const identifiedState = input.hasIdentityFacts
     ? 'done'
@@ -65,7 +67,9 @@ export function derivePhases(input: {
       detail: input.hasEvidence
         ? 'Comparable sales imported'
         : researchedState === 'pending'
-          ? 'Ready to search eBay'
+          ? input.isCheckingEvidence
+            ? 'Checking sold listings against your item'
+            : 'Ready to search eBay'
           : 'Not yet researched',
       state: researchedState,
     },

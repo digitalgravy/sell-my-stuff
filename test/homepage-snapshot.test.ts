@@ -84,7 +84,7 @@ void test('routes a RESEARCHING item with a ready eBay search link into attentio
   assert.equal(snapshot.attention.length, 1);
   assert.equal(
     snapshot.attention[0]?.reason,
-    'Ready to search eBay for comparable sold listings',
+    'Comparable-sales research in progress',
   );
 });
 

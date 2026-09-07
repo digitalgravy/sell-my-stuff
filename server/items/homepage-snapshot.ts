@@ -118,8 +118,15 @@ export function buildHomepageSnapshot(
       attention.push({
         id: row.id,
         title,
+        // Deliberately doesn't say "ready to search eBay yourself" -- a
+        // search URL existing here just means a research attempt has run
+        // at least once; the automated tiers (a real browser, tried
+        // first) may still be actively fetching or classifying listings
+        // for this exact item, not waiting on the user at all. See
+        // item-detail-view-model.ts's derivePhases for the fuller,
+        // per-item-accurate version of this same state.
         reason: row.facts.ebaySearchUrl
-          ? 'Ready to search eBay for comparable sold listings'
+          ? 'Comparable-sales research in progress'
           : 'Comparable-sales research has not run yet',
         updatedAt,
       });
