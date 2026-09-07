@@ -1,0 +1,1 @@
+ALTER TABLE "comparable_sales" ADD COLUMN "excluded_reason" text;

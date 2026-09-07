@@ -12,10 +12,12 @@ import {
   photos,
   researchCaptures,
 } from '@/db/schema';
+import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-comparable-match-provider';
 import { getDatabase } from '@/server/db/client';
 import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from '@/server/jobs/research-comparable-sales-job';
 
+import { buildIdentityFactsForMatching, classifyComparableSales } from './comparable-match';
 import { deriveActivityState } from './homepage-snapshot';
 import { computeValuation } from './valuation';
 import type {
@@ -115,11 +117,13 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .limit(1),
       database
         .select({
+          id: comparableSales.id,
           title: comparableSales.title,
           match: comparableSales.match,
           soldAt: comparableSales.soldAt,
           price: comparableSales.price,
           excluded: comparableSales.excluded,
+          excludedReason: comparableSales.excludedReason,
         })
         .from(comparableSales)
         .where(eq(comparableSales.itemId, itemId))
@@ -158,6 +162,11 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .orderBy(desc(factCorrections.correctedAt)),
     ]);
 
+    const comparableSaleList: ComparableSale[] = comparableSaleRows.map((row) => ({
+      ...row,
+      excludedReason: row.excludedReason ?? undefined,
+    }));
+
     const facts: ItemDetailFact[] = factRows.map((row) => ({
       field: row.field,
       value: parseFactValue(row.value),
@@ -182,7 +191,6 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       position: row.position,
     }));
 
-    // Three independent sources of build-log entries (identification runs,
     // Four independent sources of build-log entries (identification runs,
     // comparable-sales imports, eBay-search-link jobs, fact corrections)
     // merged into one chronological list -- each timestamped record keeps
@@ -266,17 +274,17 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       phases: derivePhases({
         status: item.status,
         hasIdentityFacts,
-        hasEvidence: comparableSaleRows.length > 0,
+        hasEvidence: comparableSaleList.length > 0,
       }),
       attention: deriveAttention({
         status: item.status,
         openQuestions,
         lastError: job?.lastError ?? undefined,
         ebaySearchUrl,
-        hasEvidence: comparableSaleRows.length > 0,
+        hasEvidence: comparableSaleList.length > 0,
       }),
-      evidence: comparableSaleRows.length > 0 ? buildEvidence(comparableSaleRows) : undefined,
-      pricing: computeValuation(comparableSaleRows),
+      evidence: comparableSaleList.length > 0 ? buildEvidence(comparableSaleList) : undefined,
+      pricing: computeValuation(comparableSaleList),
       buildSteps,
     };
   }
@@ -337,6 +345,64 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       itemId,
       type: RESEARCH_COMPARABLE_SALES_JOB_TYPE,
       idempotencyKey: `${RESEARCH_COMPARABLE_SALES_JOB_TYPE}:${itemId}:${randomUUID()}`,
+    });
+
+    return { ok: true };
+  }
+
+  async setSaleExcluded(
+    itemId: string,
+    saleId: string,
+    excluded: boolean,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const database = getDatabase();
+    const result = await database
+      .update(comparableSales)
+      .set({ excluded, excludedReason: null })
+      .where(and(eq(comparableSales.id, saleId), eq(comparableSales.itemId, itemId)))
+      .returning({ id: comparableSales.id });
+    if (result.length === 0) return { ok: false, reason: 'Comparable sale not found' };
+    return { ok: true };
+  }
+
+  async reclassifyEvidence(itemId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const database = getDatabase();
+
+    const [item] = await database.select({ id: items.id }).from(items).where(eq(items.id, itemId));
+    if (!item) return { ok: false, reason: 'Item not found' };
+
+    const [identityFactRows, saleRows] = await Promise.all([
+      database
+        .select({ field: itemFacts.field, value: itemFacts.value })
+        .from(itemFacts)
+        .where(eq(itemFacts.itemId, itemId)),
+      database
+        .select({
+          id: comparableSales.id,
+          title: comparableSales.title,
+          match: comparableSales.match,
+          soldAt: comparableSales.soldAt,
+          price: comparableSales.price,
+        })
+        .from(comparableSales)
+        .where(eq(comparableSales.itemId, itemId)),
+    ]);
+    if (saleRows.length === 0) return { ok: false, reason: 'No comparable sales to re-check' };
+
+    const identity = buildIdentityFactsForMatching(identityFactRows);
+    const classified = await classifyComparableSales(
+      identity,
+      saleRows,
+      getAnthropicComparableMatchProvider(),
+    );
+
+    await database.transaction(async (tx) => {
+      for (const sale of classified) {
+        await tx
+          .update(comparableSales)
+          .set({ excluded: sale.excluded ?? false, excludedReason: sale.excludedReason ?? null })
+          .where(eq(comparableSales.id, sale.id!));
+      }
     });
 
     return { ok: true };

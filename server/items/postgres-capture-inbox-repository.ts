@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
-import { comparableSales, items, researchCaptures } from '@/db/schema';
+import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-comparable-match-provider';
+import { comparableSales, itemFacts, items, researchCaptures } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 import { extractComparableSalesFromHtml, extractPageTitle } from '@/server/research/sold-listings-html';
 
@@ -13,6 +14,7 @@ import type {
   SaveCaptureResult,
   UndoImportOutcome,
 } from './capture-inbox-repository';
+import { buildIdentityFactsForMatching, classifyComparableSales } from './comparable-match';
 import type { ComparableSale } from './item-detail-repository';
 
 export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
@@ -80,15 +82,39 @@ export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
       return { ok: false, reason: 'No comparable sales were extracted from this capture' };
     }
 
+    let classifiedSales = sales;
+    try {
+      const identityFactRows = await database
+        .select({ field: itemFacts.field, value: itemFacts.value })
+        .from(itemFacts)
+        .where(eq(itemFacts.itemId, itemId));
+      const identity = buildIdentityFactsForMatching(identityFactRows);
+      classifiedSales = await classifyComparableSales(
+        identity,
+        sales,
+        getAnthropicComparableMatchProvider(),
+      );
+    } catch (error) {
+      // Classification is a best-effort pre-pass, never a blocker -- import
+      // proceeds with everything included and unreasoned if it fails for
+      // any reason (missing key, network error, bad response).
+      console.error(
+        'Comparable-sales match classification failed, importing without it',
+        error instanceof Error ? error.name : 'UnknownError',
+      );
+    }
+
     await database.transaction(async (tx) => {
       await tx.insert(comparableSales).values(
-        sales.map((sale) => ({
+        classifiedSales.map((sale) => ({
           id: randomUUID(),
           itemId,
           title: sale.title,
           match: sale.match,
           soldAt: sale.soldAt,
           price: sale.price,
+          excluded: sale.excluded ?? false,
+          excludedReason: sale.excludedReason ?? null,
           sourceCaptureId: captureId,
         })),
       );

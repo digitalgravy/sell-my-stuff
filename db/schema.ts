@@ -227,6 +227,12 @@ export const comparableSales = pgTable(
     soldAt: text('sold_at').notNull(),
     price: real('price').notNull(),
     excluded: boolean('excluded').notNull().default(false),
+    // Set by the import-time match classifier when it excludes a listing
+    // (a bundle, an accessory-only listing, wrong variant, etc.) -- shown
+    // in the UI so a human reviewing 60 rows doesn't have to re-read every
+    // title to see why. Left null for a manual toggle; that action is
+    // self-explanatory (you just clicked it).
+    excludedReason: text('excluded_reason'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

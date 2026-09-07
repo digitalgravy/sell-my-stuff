@@ -1062,6 +1062,38 @@ function EvidenceTab({
   readOnly: boolean;
   onImported: () => void;
 }) {
+  const [togglingSaleId, setTogglingSaleId] = useState<string | null>(null);
+  const [reclassifying, setReclassifying] = useState(false);
+
+  const reclassifyEvidence = useCallback(() => {
+    setReclassifying(true);
+    fetch(`/api/items/${itemId}/evidence/reclassify`, { method: 'POST' })
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        onImported();
+      })
+      .catch(() => undefined)
+      .finally(() => setReclassifying(false));
+  }, [itemId, onImported]);
+
+  const toggleSale = useCallback(
+    (saleId: string, excluded: boolean) => {
+      setTogglingSaleId(saleId);
+      fetch(`/api/items/${itemId}/evidence/${saleId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ excluded }),
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error();
+          onImported();
+        })
+        .catch(() => undefined)
+        .finally(() => setTogglingSaleId(null));
+    },
+    [itemId, onImported],
+  );
+
   if (!detail.evidence) {
     return (
       <div className="space-y-5">
@@ -1090,11 +1122,27 @@ function EvidenceTab({
             Fair value £{evidence.fairValue.toFixed(2)}
           </p>
         </div>
-        <p className="mt-1.5 text-sm text-muted-foreground">{evidence.note}</p>
+        <div className="mt-1.5 flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">{evidence.note}</p>
+          {!readOnly ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              disabled={reclassifying}
+              onClick={reclassifyEvidence}
+            >
+              {reclassifying ? 'Re-checking…' : 'Re-check matches'}
+            </Button>
+          ) : null}
+        </div>
         <div className="mt-5 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[44px]">
+                  <span className="sr-only">Include in pricing</span>
+                </TableHead>
                 <TableHead className="w-full min-w-[220px]">Listing</TableHead>
                 <TableHead>Match</TableHead>
                 <TableHead>Sold</TableHead>
@@ -1104,9 +1152,21 @@ function EvidenceTab({
             <TableBody>
               {evidence.sales.map((sale) => (
                 <TableRow
-                  key={sale.title}
+                  key={sale.id ?? sale.title}
                   className={cn(sale.excluded && 'text-muted-foreground')}
                 >
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      checked={!sale.excluded}
+                      disabled={readOnly || !sale.id || togglingSaleId === sale.id}
+                      onChange={(event) =>
+                        sale.id && toggleSale(sale.id, !event.target.checked)
+                      }
+                      aria-label={sale.excluded ? 'Include in pricing' : 'Exclude from pricing'}
+                      className="size-4 accent-primary"
+                    />
+                  </TableCell>
                   <TableCell
                     className={cn(
                       'whitespace-normal break-words',
@@ -1114,6 +1174,11 @@ function EvidenceTab({
                     )}
                   >
                     {sale.title}
+                    {sale.excluded && sale.excludedReason ? (
+                      <span className="mt-0.5 block text-xs text-muted-foreground no-underline">
+                        {sale.excludedReason}
+                      </span>
+                    ) : null}
                   </TableCell>
                   <TableCell className="whitespace-normal text-xs">{sale.match}</TableCell>
                   <TableCell className="text-xs tabular-nums">{sale.soldAt}</TableCell>

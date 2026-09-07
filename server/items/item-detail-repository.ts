@@ -100,11 +100,15 @@ export interface ListingInfo {
 }
 
 export interface ComparableSale {
+  /** Absent for a raw scraped sale that hasn't been persisted yet (server/research/sold-listings-html.ts's output, before import). */
+  id?: string;
   title: string;
   match: string;
   soldAt: string;
   price: number;
   excluded?: boolean;
+  /** Set by the import-time match classifier when it excludes this listing; absent for a manual toggle or an included sale. */
+  excludedReason?: string;
 }
 
 export interface EvidenceInfo {
@@ -162,6 +166,26 @@ export interface ItemDetailRepository {
   undoCorrection(itemId: string, correctionId: string): Promise<UndoCorrectionOutcome>;
   /** Manually re-queues research_comparable_sales -- e.g. after correcting a fact the eBay search was built from. */
   regenerateResearch(itemId: string): Promise<RegenerateResearchOutcome>;
+  /**
+   * Marks a comparable sale included or excluded from pricing -- a manual
+   * toggle always overrides whatever the import-time match classifier (or
+   * an earlier toggle) decided, and clears any classifier-supplied reason
+   * since the human judgment is now the reason.
+   */
+  setSaleExcluded(
+    itemId: string,
+    saleId: string,
+    excluded: boolean,
+  ): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /**
+   * Re-runs the match classifier against every comparable sale already on
+   * the item -- for evidence imported before the classifier existed, or to
+   * retry after correcting a fact the earlier classification used. This
+   * overwrites every row's excluded/excludedReason with a fresh verdict,
+   * including any manual toggle -- a re-check starts clean rather than
+   * trying to guess which prior excludes were manual.
+   */
+  reclassifyEvidence(itemId: string): Promise<{ ok: true } | { ok: false; reason: string }>;
   /** Permanently deletes the item and everything under it (photos, facts, jobs, build log — cascade). */
   deleteItem(itemId: string): Promise<{ ok: boolean }>;
 }
