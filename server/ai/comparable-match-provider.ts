@@ -6,7 +6,15 @@ export interface CandidateListing {
   match: string;
 }
 
-/** Only the identity facts that matter for judging whether a listing is the same real-world item -- not confidence/evidence/etc. */
+/**
+ * Only the identity facts that matter for judging whether a listing is the
+ * same real-world item -- not confidence/evidence/etc. `conditionGrade`
+ * (BRIEF.md's grade ladder, see lib/fact-fields.ts) is included too even
+ * though it isn't strictly identity, so the classifier can also catch a
+ * listing whose condition is a poor comparable (a "FAULTY"/"for parts"
+ * listing when the item itself is graded very_good, or the reverse) --
+ * see MATCH_SYSTEM_PROMPT.
+ */
 export interface IdentityFactsForMatching {
   itemType?: string;
   manufacturer?: string;
@@ -14,6 +22,7 @@ export interface IdentityFactsForMatching {
   model?: string;
   modelNumbers?: string[];
   colour?: string;
+  conditionGrade?: string;
 }
 
 export const listingMatchSchema = z.object({

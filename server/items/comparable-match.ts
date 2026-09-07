@@ -79,5 +79,6 @@ export function buildIdentityFactsForMatching(
     model: readFactString(facts, 'identity.model'),
     modelNumbers: readFactStringArray(facts, 'identity.model_numbers'),
     colour: readFactString(facts, 'identity.colour'),
+    conditionGrade: readFactString(facts, 'condition.overall_grade'),
   };
 }

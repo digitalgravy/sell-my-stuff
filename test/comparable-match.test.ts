@@ -101,6 +101,7 @@ void test('buildIdentityFactsForMatching reads only the identity fields relevant
     model: 'HomePod mini',
     modelNumbers: ['A2374'],
     colour: undefined,
+    conditionGrade: undefined,
   });
 });
 
@@ -113,5 +114,14 @@ void test('buildIdentityFactsForMatching returns all-undefined for no facts', ()
     model: undefined,
     modelNumbers: undefined,
     colour: undefined,
+    conditionGrade: undefined,
   });
+});
+
+void test('buildIdentityFactsForMatching also reads the condition grade, for condition-aware matching', () => {
+  const identity = buildIdentityFactsForMatching([
+    fact('identity.manufacturer', 'Apple'),
+    fact('condition.overall_grade', 'very_good'),
+  ]);
+  assert.equal(identity.conditionGrade, 'very_good');
 });
