@@ -202,10 +202,10 @@ export default function ItemsPage() {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[64px]" />
+                    <TableHead className="w-16" />
                     <SortableHead
                       column="title"
                       active={sortColumn}
@@ -217,21 +217,22 @@ export default function ItemsPage() {
                       active={sortColumn}
                       direction={sortDirection}
                       onSort={toggleSort}
+                      className="w-40"
                     />
-                    <TableHead>Progress</TableHead>
+                    <TableHead className="w-40">Progress</TableHead>
                     <SortableHead
                       column="price"
                       active={sortColumn}
                       direction={sortDirection}
                       onSort={toggleSort}
-                      className="text-right"
+                      className="w-28 text-right"
                     />
                     <SortableHead
                       column="updated"
                       active={sortColumn}
                       direction={sortDirection}
                       onSort={toggleSort}
-                      className="text-right"
+                      className="w-28 text-right"
                     />
                   </TableRow>
                 </TableHeader>

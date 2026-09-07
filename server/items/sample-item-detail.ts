@@ -326,6 +326,14 @@ export function buildSampleItemDetail(): ItemDetail {
         detail: 'Listing drafted, waiting on your review',
         state: 'pending',
       },
+      { key: 'auction', label: 'Auction', detail: 'Auction/listing management not built yet', state: 'not_started' },
+      { key: 'delivered', label: 'Delivered', detail: 'Delivery tracking not built yet', state: 'not_started' },
+      {
+        key: 'funds_received',
+        label: 'Funds received',
+        detail: 'Payment tracking not built yet',
+        state: 'not_started',
+      },
     ],
     attention: [
       {

@@ -79,6 +79,42 @@ export function derivePhases(input: {
       detail: 'Listing drafting not built yet',
       state: 'not_started',
     },
+    // Auction/Delivered/Funds received: placeholder phases only, same
+    // honest "not built yet" pattern as Draft ready -- there is no
+    // listing/auction, delivery, or payment backend at all yet (see
+    // PROJECT_STATUS.md). Design agreed with the project owner
+    // 2026-09-07 for when these get built for real:
+    //   - Auction: two states, "Planned, waiting to run" then "Finished
+    //     auction", which resolves to either Completed (sold) or Unsold.
+    //     Unsold renders as a red bar (a new PhaseState value doesn't
+    //     exist yet -- add one once this is real), blocks Delivered/Funds
+    //     received from progressing, and offers a "Re-list" action that
+    //     must account for any additional listing fees the relist itself
+    //     incurs (on top of whatever the first attempt already cost).
+    //   - Delivered: three states -- Waiting (on the seller to arrange
+    //     dispatch), Preparing (packed, not yet marked sent), Sent (once
+    //     proof of delivery is uploaded).
+    //   - Funds received: two states, Waiting and Received, toggled once
+    //     the seller confirms the money has actually arrived (never
+    //     inferred from marketplace status alone).
+    {
+      key: 'auction',
+      label: 'Auction',
+      detail: 'Auction/listing management not built yet',
+      state: 'not_started',
+    },
+    {
+      key: 'delivered',
+      label: 'Delivered',
+      detail: 'Delivery tracking not built yet',
+      state: 'not_started',
+    },
+    {
+      key: 'funds_received',
+      label: 'Funds received',
+      detail: 'Payment tracking not built yet',
+      state: 'not_started',
+    },
   ];
 }
 

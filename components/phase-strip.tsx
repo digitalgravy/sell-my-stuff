@@ -10,9 +10,9 @@ import type { PhaseInfo } from '@/server/items/item-detail-repository';
  */
 export function PhaseStrip({ phases }: { phases: PhaseInfo[] }) {
   return (
-    <ol className="mt-7 flex items-stretch gap-3">
+    <ol className="mt-7 flex flex-wrap items-stretch gap-3">
       {phases.map((phase) => (
-        <li key={phase.key} className="flex-1">
+        <li key={phase.key} className="min-w-[104px] flex-1">
           <div
             className={cn(
               'h-1.5 rounded-full',
@@ -40,7 +40,7 @@ export function PhaseStrip({ phases }: { phases: PhaseInfo[] }) {
 export function CompactPhaseStrip({ phases }: { phases: PhaseInfo[] }) {
   const current = [...phases].reverse().find((phase) => phase.state !== 'not_started');
   return (
-    <div className="w-28" title={phases.map((phase) => `${phase.label}: ${phase.state}`).join(' · ')}>
+    <div className="w-full" title={phases.map((phase) => `${phase.label}: ${phase.state}`).join(' · ')}>
       <div className="flex items-stretch gap-1">
         {phases.map((phase) => (
           <div

@@ -376,9 +376,9 @@ export function ItemDetailView({
           <Link
             href="/"
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Back to today"
           >
             <ArrowLeft className="size-4" />
-            Today
           </Link>
           {detail ? (
             <DropdownMenu>

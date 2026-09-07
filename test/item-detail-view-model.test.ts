@@ -37,7 +37,10 @@ void test('derivePhases never marks a genuinely unbuilt phase as done or pending
   const phases = derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false });
   const unbuilt = phases.filter((p) => p.key !== 'identified' && p.key !== 'researched');
   assert.ok(unbuilt.every((p) => p.state === 'not_started'));
-  assert.equal(unbuilt.length, 2);
+  assert.deepEqual(
+    unbuilt.map((p) => p.key),
+    ['assessed', 'draft_ready', 'auction', 'delivered', 'funds_received'],
+  );
 });
 
 void test('derivePhases marks Researched pending while status is RESEARCHING with no evidence yet, done once evidence exists', () => {
