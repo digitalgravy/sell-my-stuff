@@ -81,7 +81,10 @@ void test('buildItemListEntry: a required attention task always wins, even with 
     }),
   );
   assert.equal(entry.pill, 'needs_action');
-  assert.equal(entry.detail, 'Confirm the listing text');
+  // Deliberately no detail text here -- an attention task's title can be a
+  // full question/sentence, which doesn't belong wrapped under a pill in
+  // a fixed-width table column (the item's own page explains why).
+  assert.equal(entry.detail, undefined);
 });
 
 void test('buildItemListEntry: pricing with nothing required is ready', () => {

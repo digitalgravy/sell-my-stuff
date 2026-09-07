@@ -14,7 +14,14 @@ export interface ItemListEntry {
   heroPhotoUrl?: string;
   pill: ItemListPill;
   pillLabel: string;
-  /** Short line shown under the pill -- e.g. the first required task's title, or a stage label. Undefined when the pill alone is the whole story (READY, or AT AUCTION with no recorded end time). */
+  /**
+   * A short in-progress stage label ("Identifying", "Queued for
+   * identification") -- deliberately NOT the attention task's own title
+   * for "needs_action" (that can be a full question/sentence, which
+   * doesn't scan well wrapped under a pill in a fixed-width table column;
+   * the item's own page has the room to explain why). Undefined whenever
+   * there's nothing short and useful to add.
+   */
   detail?: string;
   /** The recommended Buy-It-Now price minus AI research cost so far and an approximate marketplace fee -- see server/items/fees.ts. */
   estimatedProfit?: number;
@@ -68,7 +75,6 @@ export function buildItemListEntry(detail: ItemDetail): ItemListEntry {
     pill = 'complete';
   } else if (requiredTasks.length > 0) {
     pill = 'needs_action';
-    itemDetail = requiredTasks[0]!.title;
   } else if (detail.pricing) {
     pill = 'ready';
   } else {
