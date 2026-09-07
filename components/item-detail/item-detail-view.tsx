@@ -66,6 +66,12 @@ import {
 type LoadStatus = 'loading' | 'ready' | 'error' | 'not-found';
 
 const POLL_INTERVAL_MS = 8_000;
+const FACTS_SECTION_ID = 'facts-section';
+// Mirrors the server's own identification/condition confidence gate
+// (inspect-images-job.ts) -- a fact below this is exactly the kind that
+// would have raised a question rather than being asserted outright, so it's
+// the right line for "worth a second look" here too.
+const LOW_CONFIDENCE_THRESHOLD = 0.7;
 
 class ItemNotFoundError extends Error {}
 
@@ -280,6 +286,10 @@ export function ItemDetailView({
       }
       if (task.ctaLabel === 'Prepare eBay search') {
         regenerateResearch();
+        return;
+      }
+      if (task.ctaLabel === 'Review facts') {
+        document.getElementById(FACTS_SECTION_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     },
     [openCorrection, retry, regenerateResearch],
@@ -781,29 +791,43 @@ function OverviewTab({
         )}
       </section>
 
-      {detail.facts.length === 0 ? (
-        <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
-          <h2 className="text-lg font-semibold tracking-[-0.03em]">Facts</h2>
-          <p className="mt-3.5 text-sm text-muted-foreground">No facts recorded yet.</p>
-        </section>
-      ) : (
-        groupFacts(detail.facts).map((group) => (
-          <section
-            key={group.key}
-            className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8"
-          >
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-lg font-semibold tracking-[-0.03em]">
-                {group.label}
-              </h2>
-              <span className="text-sm text-muted-foreground">
-                {group.facts.length} fact{group.facts.length === 1 ? '' : 's'}
-              </span>
-            </div>
-            <FactGrid facts={group.facts} onCorrectFact={onCorrectFact} />
+      <div id={FACTS_SECTION_ID} className="space-y-7 scroll-mt-20">
+        {detail.facts.length === 0 ? (
+          <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
+            <h2 className="text-lg font-semibold tracking-[-0.03em]">Facts</h2>
+            <p className="mt-3.5 text-sm text-muted-foreground">No facts recorded yet.</p>
           </section>
-        ))
-      )}
+        ) : (
+          groupFacts(detail.facts).map((group) => {
+            const lowConfidenceCount = group.facts.filter(
+              (fact) => fact.confidence < LOW_CONFIDENCE_THRESHOLD,
+            ).length;
+            return (
+              <section
+                key={group.key}
+                className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <h2 className="text-lg font-semibold tracking-[-0.03em]">
+                    {group.label}
+                  </h2>
+                  <div className="flex items-center gap-2.5">
+                    {lowConfidenceCount > 0 ? (
+                      <Badge className="border-transparent bg-warning-soft text-warning">
+                        {lowConfidenceCount} low confidence
+                      </Badge>
+                    ) : null}
+                    <span className="text-sm text-muted-foreground">
+                      {group.facts.length} fact{group.facts.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                </div>
+                <FactGrid facts={group.facts} onCorrectFact={onCorrectFact} />
+              </section>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -878,7 +902,14 @@ function FactCell({
           Correct
         </button>
       </div>
-      <p className="mt-1 text-[15px] font-semibold">{formatFactValue(fact.value)}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <p className="text-[15px] font-semibold">{formatFactValue(fact.value)}</p>
+        {fact.confidence < LOW_CONFIDENCE_THRESHOLD ? (
+          <Badge className="border-transparent bg-warning-soft text-warning">
+            Low confidence
+          </Badge>
+        ) : null}
+      </div>
       {fact.evidence ? (
         <p className="mt-1.5 text-sm text-muted-foreground">{fact.evidence}</p>
       ) : null}
@@ -903,6 +934,7 @@ function AttentionGroup({
     (task.ctaLabel === 'Correct' && task.field !== undefined) ||
     task.ctaLabel === 'Retry' ||
     task.ctaLabel === 'Prepare eBay search' ||
+    task.ctaLabel === 'Review facts' ||
     (task.ctaLabel === 'Search eBay' && task.href !== undefined);
 
   return (
