@@ -55,7 +55,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { getEnumFactField } from '@/lib/fact-fields';
 import { cn } from '@/lib/utils';
-import { usdToGbp } from '@/server/ai/pricing';
+import { EBAY_UK_APPROX_FINAL_VALUE_FEE_RATE } from '@/server/items/fees';
 import type {
   AttentionTask,
   ItemDetail,
@@ -761,11 +761,27 @@ function DecisionCard({
           ? ` in the last ${pricing.evidenceWindowDays} days`
           : ''}
       </p>
-      <p className="mt-1 text-sm tabular-nums text-muted-foreground">
-        Estimated profit after AI research cost £
-        {(pricing.buyItNowPrice - usdToGbp(detail.aiCostUsd)).toFixed(2)} (research cost ~£
-        {usdToGbp(detail.aiCostUsd).toFixed(2)}, before marketplace fees)
-      </p>
+      {detail.proceeds ? (
+        <details className="mt-2 text-sm text-muted-foreground">
+          <summary className="cursor-pointer list-none marker:hidden">
+            Estimated net proceeds:{' '}
+            <span className="font-semibold tabular-nums text-foreground">
+              £{detail.proceeds.estimatedNet.toFixed(2)}
+            </span>
+          </summary>
+          <div className="mt-2 space-y-1 border-l border-border/60 pl-3 text-xs tabular-nums">
+            <p>Sale proceeds: £{detail.proceeds.saleProceeds.toFixed(2)}</p>
+            <p>
+              − Marketplace fee (~{Math.round(EBAY_UK_APPROX_FINAL_VALUE_FEE_RATE * 100)}%,
+              approximate): £{detail.proceeds.marketplaceFeeGbp.toFixed(2)}
+            </p>
+            <p>− AI research cost: £{detail.proceeds.aiResearchCostGbp.toFixed(2)}</p>
+            <p className="font-medium text-foreground">
+              = Estimated net: £{detail.proceeds.estimatedNet.toFixed(2)}
+            </p>
+          </div>
+        </details>
+      ) : null}
 
       <div className="mt-5 grid grid-cols-3 gap-3">
         <div className="rounded-2xl bg-muted/60 p-4">

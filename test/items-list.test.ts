@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { estimateMarketplaceFeeGbp } from '../server/items/fees';
 import { buildItemListEntry, deriveItemTitle } from '../server/items/items-list';
 import type { AttentionTask, ItemDetail, ItemDetailFact } from '../server/items/item-detail-repository';
 
@@ -101,7 +102,7 @@ void test('buildItemListEntry: pricing with nothing required is ready', () => {
     }),
   );
   assert.equal(entry.pill, 'ready');
-  assert.equal(entry.estimatedProfit, 21.99);
+  assert.equal(entry.estimatedProfit, 21.99 - estimateMarketplaceFeeGbp(21.99));
 });
 
 void test('buildItemListEntry: estimatedProfit nets out AI research cost', () => {
@@ -122,7 +123,7 @@ void test('buildItemListEntry: estimatedProfit nets out AI research cost', () =>
       },
     }),
   );
-  assert.equal(entry.estimatedProfit, 21.99 - 0.79);
+  assert.equal(entry.estimatedProfit, 21.99 - 0.79 - estimateMarketplaceFeeGbp(21.99));
 });
 
 void test('buildItemListEntry: no pricing and nothing required falls back to a stage label', () => {

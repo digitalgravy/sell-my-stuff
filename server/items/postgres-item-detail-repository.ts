@@ -19,7 +19,7 @@ import {
 import type { FactAnswerInput } from '@/server/ai/answer-resolution-provider';
 import { getAnthropicAnswerResolutionProvider } from '@/server/ai/anthropic-answer-resolution-provider';
 import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-comparable-match-provider';
-import { estimateCostUsd } from '@/server/ai/pricing';
+import { estimateCostUsd, usdToGbp } from '@/server/ai/pricing';
 import { getDatabase } from '@/server/db/client';
 import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from '@/server/jobs/research-comparable-sales-job';
@@ -29,6 +29,7 @@ import {
   startAnswerResolutionRun,
 } from './answer-resolution-runs';
 import { buildIdentityFactsForMatching, classifyComparableSales } from './comparable-match';
+import { computeProceedsBreakdown } from './fees';
 import { deriveActivityState } from './homepage-snapshot';
 import {
   deleteItemEventBySource,
@@ -439,6 +440,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       sumRunCosts(conditionRunRows) +
       sumRunCosts(matchRunRows) +
       sumRunCosts(answerResolutionRunRows);
+    const pricing = computeValuation(comparableSaleList);
 
     return {
       id: item.id,
@@ -466,7 +468,10 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         hasEvidence: comparableSaleList.length > 0,
       }),
       evidence: comparableSaleList.length > 0 ? buildEvidence(comparableSaleList) : undefined,
-      pricing: computeValuation(comparableSaleList),
+      pricing,
+      proceeds: pricing
+        ? computeProceedsBreakdown(pricing.buyItNowPrice, usdToGbp(aiCostUsd))
+        : undefined,
       aiCostUsd,
       buildSteps,
     };

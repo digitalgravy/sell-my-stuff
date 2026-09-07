@@ -1,3 +1,4 @@
+import type { ProceedsBreakdown } from './fees';
 import type { ActivityState } from './homepage-snapshot';
 import type { ItemStatusValue } from './research-repository';
 
@@ -138,6 +139,8 @@ export interface ItemDetail {
   attention: AttentionTask[];
   /** Undefined until real research/pricing exists — render an honest "not built yet" state, never a fabricated number. */
   pricing?: PricingAdvice;
+  /** Sale proceeds − marketplace fee − AI research cost, per BRIEF.md's "Fees and estimated net proceeds" -- undefined exactly when `pricing` is (there's nothing to net a fee off of). */
+  proceeds?: ProceedsBreakdown;
   /** Undefined until a real listing-drafting stage exists. */
   listing?: ListingInfo;
   /** Undefined until real comparable-sales research exists. */
