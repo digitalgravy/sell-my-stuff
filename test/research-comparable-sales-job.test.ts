@@ -60,6 +60,12 @@ class MemoryJobRepository implements ResearchJobRepository {
 
   async completeIdentificationRun() {}
 
+  async startConditionAssessmentRun() {
+    return { runId: 'condition-run-unused' };
+  }
+
+  async completeConditionAssessmentRun() {}
+
   async markPhotosInspected() {}
 
   async transitionItemStatus() {}

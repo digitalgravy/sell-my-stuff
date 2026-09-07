@@ -1,4 +1,5 @@
 import { MATCH_SYSTEM_PROMPT } from '@/server/ai/anthropic-comparable-match-provider';
+import { CONDITION_SYSTEM_PROMPT } from '@/server/ai/anthropic-condition-provider';
 import { SYSTEM_PROMPT } from '@/server/ai/anthropic-vision-provider';
 import { estimateCostUsd } from '@/server/ai/pricing';
 
@@ -7,20 +8,32 @@ import type { AttentionTask, BuildStep, PhaseInfo } from './item-detail-reposito
 import type { ItemStatusValue } from './research-repository';
 
 /**
- * "Identified" and "Researched" reflect something real; "Assessed" and
- * "Draft ready" still have no backing job type (see PROJECT_STATUS.md).
+ * "Identified", "Assessed" and "Researched" each reflect something real;
+ * "Draft ready" still has no backing job type (see PROJECT_STATUS.md).
  * Honesty over completeness: a phase is only "done" when its own evidence
- * (identity facts existing, comparable sales imported) says so, never
- * inferred from the item's lifecycle status alone, and the unbuilt phases
- * always read "not_started" rather than guessing at progress that doesn't
- * exist.
+ * (identity facts existing, condition facts existing, comparable sales
+ * imported) says so, never inferred from the item's lifecycle status alone,
+ * and the unbuilt phase always reads "not_started" rather than guessing at
+ * progress that doesn't exist.
  */
 export function derivePhases(input: {
   status: ItemStatusValue;
   hasIdentityFacts: boolean;
+  hasConditionFacts: boolean;
   hasEvidence: boolean;
 }): PhaseInfo[] {
   const identifiedState = input.hasIdentityFacts
+    ? 'done'
+    : input.status === 'IDENTIFYING'
+      ? 'pending'
+      : 'not_started';
+
+  // Condition assessment runs inside the same inspect_images job attempt as
+  // identification (see inspect-images-job.ts), so it goes through the same
+  // IDENTIFYING window -- "pending" here means the same thing it means for
+  // Identified: this attempt is in flight, not that condition specifically
+  // is still running.
+  const assessedState = input.hasConditionFacts
     ? 'done'
     : input.status === 'IDENTIFYING'
       ? 'pending'
@@ -42,8 +55,8 @@ export function derivePhases(input: {
     {
       key: 'assessed',
       label: 'Assessed',
-      detail: 'Condition assessment not built yet',
-      state: 'not_started',
+      detail: input.hasConditionFacts ? 'Condition recorded' : 'Not yet assessed',
+      state: assessedState,
     },
     {
       key: 'researched',
@@ -213,6 +226,63 @@ export function buildStepsFromRuns(
           label: 'User turn',
           meta: `${photoCount} photo${photoCount === 1 ? '' : 's'}`,
           content: 'Identify the item shown in these photographs.',
+        },
+        ...(run.outcome === 'succeeded'
+          ? [
+              {
+                label: 'Assistant response',
+                meta: costMeta(run.model, run.inputTokens, run.outputTokens),
+                content: JSON.stringify(run.response, null, 2),
+              },
+            ]
+          : run.outcome === 'failed'
+            ? [{ label: 'Error', content: run.errorMessage ?? 'Unknown error' }]
+            : [{ label: 'Waiting', content: 'No response from Anthropic yet.' }]),
+      ],
+    };
+  });
+}
+
+/**
+ * Every real condition_assessment_runs row becomes exactly one build step,
+ * the same pending/resolved shape as buildStepsFromRuns -- a separate vision
+ * turn from identification (see condition-provider.ts), so it gets its own
+ * stage label rather than being merged into "Identify item".
+ */
+export function buildStepsFromConditionRuns(
+  runs: RunForBuildStep[],
+  photoCount: number,
+): BuildStep[] {
+  return runs.map((run) => {
+    const detail =
+      run.outcome === 'succeeded'
+        ? `Vision model turn · attempt ${run.attempt} · condition assessed`
+        : run.outcome === 'failed'
+          ? `Vision model turn · attempt ${run.attempt} · failed`
+          : `Vision model turn · attempt ${run.attempt} · submitted, waiting for a response`;
+    return {
+      id: run.id,
+      stage: 'Assess condition',
+      detail,
+      type: 'llm',
+      outcome: run.outcome ?? 'pending',
+      durationMs:
+        run.outcome === undefined || !run.completedAt
+          ? 0
+          : Math.max(
+              0,
+              new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(),
+            ),
+      blocks: [
+        {
+          label: 'System prompt',
+          meta: `${run.provider} · ${run.model}`,
+          content: CONDITION_SYSTEM_PROMPT,
+        },
+        {
+          label: 'User turn',
+          meta: `${photoCount} photo${photoCount === 1 ? '' : 's'}`,
+          content: 'Assess the condition of this item for resale.',
         },
         ...(run.outcome === 'succeeded'
           ? [

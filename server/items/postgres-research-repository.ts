@@ -6,12 +6,18 @@ import { comparableSales, identificationRuns, itemFacts, items, jobs, photos } f
 import { getDatabase } from '@/server/db/client';
 
 import {
+  completeConditionAssessmentRun as completeConditionAssessmentRunRow,
+  startConditionAssessmentRun as startConditionAssessmentRunRow,
+} from './condition-assessment-runs';
+import {
   completeMatchClassificationRun as completeMatchClassificationRunRow,
   startMatchClassificationRun as startMatchClassificationRunRow,
 } from './match-classification-runs';
 import type {
   ClaimedJob,
   ComparableSaleInput,
+  ConditionAssessmentRunCompleteInput,
+  ConditionAssessmentRunStartInput,
   IdentificationFactInput,
   IdentificationRunCompleteInput,
   IdentificationRunStartInput,
@@ -159,6 +165,18 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
         completedAt: entry.completedAt,
       })
       .where(eq(identificationRuns.id, entry.runId));
+  }
+
+  async startConditionAssessmentRun(
+    entry: ConditionAssessmentRunStartInput,
+  ): Promise<{ runId: string }> {
+    return startConditionAssessmentRunRow(entry);
+  }
+
+  async completeConditionAssessmentRun(
+    entry: ConditionAssessmentRunCompleteInput,
+  ): Promise<void> {
+    return completeConditionAssessmentRunRow(entry);
   }
 
   async markPhotosInspected(photoIds: string[]): Promise<void> {

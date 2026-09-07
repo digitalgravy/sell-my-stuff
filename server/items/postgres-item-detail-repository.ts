@@ -4,6 +4,7 @@ import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import {
   comparableSales,
+  conditionAssessmentRuns,
   factCorrections,
   identificationRuns,
   itemFacts,
@@ -35,6 +36,7 @@ import type {
   UndoCorrectionOutcome,
 } from './item-detail-repository';
 import {
+  buildStepsFromConditionRuns,
   buildStepsFromCorrections,
   buildStepsFromImports,
   buildStepsFromMatchRuns,
@@ -57,6 +59,14 @@ const IDENTITY_FACT_FIELDS = new Set([
   'identity.colour',
 ]);
 
+const CONDITION_FACT_FIELDS = new Set([
+  'condition.overall_grade',
+  'condition.functional_status',
+  'condition.cosmetic_wear',
+  'condition.defects',
+  'condition.missing_parts',
+]);
+
 export class PostgresItemDetailRepository implements ItemDetailRepository {
   async getItemDetail(itemId: string): Promise<ItemDetail | null> {
     const database = getDatabase();
@@ -76,6 +86,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       photoRows,
       factRows,
       runRows,
+      conditionRunRows,
       matchRunRows,
       [job],
       comparableSaleRows,
@@ -117,6 +128,23 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .from(identificationRuns)
         .where(eq(identificationRuns.itemId, itemId))
         .orderBy(desc(identificationRuns.startedAt)),
+      database
+        .select({
+          id: conditionAssessmentRuns.id,
+          attempt: conditionAssessmentRuns.attempt,
+          provider: conditionAssessmentRuns.provider,
+          model: conditionAssessmentRuns.model,
+          outcome: conditionAssessmentRuns.outcome,
+          inputTokens: conditionAssessmentRuns.inputTokens,
+          outputTokens: conditionAssessmentRuns.outputTokens,
+          response: conditionAssessmentRuns.response,
+          errorMessage: conditionAssessmentRuns.errorMessage,
+          startedAt: conditionAssessmentRuns.startedAt,
+          completedAt: conditionAssessmentRuns.completedAt,
+        })
+        .from(conditionAssessmentRuns)
+        .where(eq(conditionAssessmentRuns.itemId, itemId))
+        .orderBy(desc(conditionAssessmentRuns.startedAt)),
       database
         .select({
           id: matchClassificationRuns.id,
@@ -201,9 +229,15 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     }));
 
     const hasIdentityFacts = factRows.some((row) => IDENTITY_FACT_FIELDS.has(row.field));
-    const openQuestions = parseStringArray(
-      factRows.find((row) => row.field === 'identity.open_questions')?.value,
-    );
+    const hasConditionFacts = factRows.some((row) => CONDITION_FACT_FIELDS.has(row.field));
+    // Identity and condition open questions surface the same way -- both
+    // are "automated-first, confidence-gated" fields per PROJECT_STATUS.md,
+    // and deriveAttention doesn't need to know which concern raised a
+    // question to turn it into an actionable task.
+    const openQuestions = [
+      ...parseStringArray(factRows.find((row) => row.field === 'identity.open_questions')?.value),
+      ...parseStringArray(factRows.find((row) => row.field === 'condition.open_questions')?.value),
+    ];
     const ebaySearchUrlRaw = factRows.find((row) => row.field === 'research.ebay_search_url')?.value;
     const ebaySearchUrl =
       typeof ebaySearchUrlRaw === 'string' ? (parseFactValue(ebaySearchUrlRaw) as string) : undefined;
@@ -224,6 +258,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     // naturally appears at the top while in flight.
     const timestampedSteps = [
       ...runRows.map((row) => ({ at: row.startedAt, kind: 'run' as const, row })),
+      ...conditionRunRows.map((row) => ({ at: row.startedAt, kind: 'conditionRun' as const, row })),
       ...matchRunRows.map((row) => ({ at: row.startedAt, kind: 'matchRun' as const, row })),
       ...importRows.map((row) => ({ at: row.importedAt!, kind: 'import' as const, row })),
       ...researchJobRows
@@ -236,6 +271,25 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       switch (entry.kind) {
         case 'run':
           return buildStepsFromRuns(
+            [
+              {
+                id: entry.row.id,
+                attempt: entry.row.attempt,
+                provider: entry.row.provider,
+                model: entry.row.model,
+                outcome: entry.row.outcome ?? undefined,
+                inputTokens: entry.row.inputTokens ?? undefined,
+                outputTokens: entry.row.outputTokens ?? undefined,
+                response: entry.row.response ?? undefined,
+                errorMessage: entry.row.errorMessage ?? undefined,
+                startedAt: entry.row.startedAt.toISOString(),
+                completedAt: entry.row.completedAt?.toISOString(),
+              },
+            ],
+            photoRows.length,
+          );
+        case 'conditionRun':
+          return buildStepsFromConditionRuns(
             [
               {
                 id: entry.row.id,
@@ -302,22 +356,20 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       }
     });
 
-    // What this item has cost so far in Anthropic API spend across both
-    // call types (identification, match classification) -- a real,
-    // measured cost that nets against the estimated sale price, not a
-    // fabricated marketplace-fee figure. Pending/failed runs with no
-    // token counts contribute 0, not undefined, so this always sums cleanly.
-    const aiCostUsd =
-      runRows.reduce(
-        (total, row) =>
-          total + (estimateCostUsd(row.model, row.inputTokens ?? undefined, row.outputTokens ?? undefined) ?? 0),
-        0,
-      ) +
-      matchRunRows.reduce(
+    // What this item has cost so far in Anthropic API spend across all
+    // three call types (identification, condition assessment, match
+    // classification) -- a real, measured cost that nets against the
+    // estimated sale price, not a fabricated marketplace-fee figure.
+    // Pending/failed runs with no token counts contribute 0, not undefined,
+    // so this always sums cleanly.
+    const sumRunCosts = (rows: { model: string; inputTokens: number | null; outputTokens: number | null }[]) =>
+      rows.reduce(
         (total, row) =>
           total + (estimateCostUsd(row.model, row.inputTokens ?? undefined, row.outputTokens ?? undefined) ?? 0),
         0,
       );
+    const aiCostUsd =
+      sumRunCosts(runRows) + sumRunCosts(conditionRunRows) + sumRunCosts(matchRunRows);
 
     return {
       id: item.id,
@@ -333,6 +385,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       phases: derivePhases({
         status: item.status,
         hasIdentityFacts,
+        hasConditionFacts,
         hasEvidence: comparableSaleList.length > 0,
       }),
       attention: deriveAttention({

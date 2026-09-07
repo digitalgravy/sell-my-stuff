@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 
 ## Current phase
 
@@ -80,23 +80,23 @@ locally through Overseer's `get_app_secret` (see "Secrets access" below).
 
 ## Next up
 
-- [ ] Condition/damage/wear assessment — not built, design agreed with the
-      project owner 2026-09-04: extends the existing automated-first,
-      confidence-gated pattern (same as identity facts) rather than a new
-      mechanism. The model attempts functional status, cosmetic wear and
-      material-specific damage (e.g. scuffs on a plastic shell vs. tears in
-      a fabric mesh grille) per field with its own confidence/evidence, and
-      only low-confidence fields become a `NEEDS_INFORMATION` question —
-      exactly like identity candidates already work. `BRIEF.md`'s "Condition
-      model" (new/sealed through spares/repair, functional status, cosmetic
-      wear, battery condition, screen/enclosure condition, defects) and
-      "Functional testing" (category-specific checks — keyboard: power/
-      keys/charging; phone: boot/display/touch/battery health) sections are
-      the spec. Open design question not yet settled: same vision call as
-      identification (simpler, cheaper) vs. a separate stage (matches the
-      brief's framing as a distinct concern, independently re-runnable after
-      follow-up photos). Deliberately not started yet — parked in favour of
-      the broader pipeline/status-accuracy work below.
+- [x] Condition/damage/wear assessment — built 2026-09-07, following the
+      design agreed with the project owner 2026-09-04: extends the existing
+      automated-first, confidence-gated pattern (same as identity facts)
+      rather than a new mechanism. A second, separate vision-model turn
+      (own system prompt, own `condition_assessment_runs` Build-log table,
+      run inside the same `inspect_images` job attempt as identification —
+      the open design question was settled in favour of a distinct stage,
+      per the brief's framing as its own concern) reports `overallGrade`
+      (`new_sealed` through `spares_repair`) plus optional
+      `functionalStatus`/`cosmeticWear`/`defects`/`missingParts`, each with
+      its own confidence/evidence (`condition.*` item_facts). A low-
+      confidence field or an open question routes the item to
+      `NEEDS_INFORMATION` exactly like identity candidates do. Not yet
+      built: the full `BRIEF.md` "Functional testing" checklist (category-
+      specific interactive tests like keyboard power/keys/charging) —
+      that's a distinct, larger feature (user-driven testing, a "Not
+      tested" fallback), deliberately out of scope here.
 - [ ] Provision a durable upload storage volume (via `container.volumes`,
       which the manifest schema already supports) and redeploy (a redeploy
       of an existing container, so no new DNS/proxy proposals this time).

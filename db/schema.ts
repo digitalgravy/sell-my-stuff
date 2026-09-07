@@ -288,6 +288,45 @@ export const identificationRuns = pgTable(
 );
 
 /**
+ * One row per condition-assessment call -- a second, separate vision-model
+ * turn run in the same inspect_images job attempt as identification (see
+ * ADR/PROJECT_STATUS.md's "Condition/damage/wear assessment": a distinct
+ * concern from identity, independently interesting in the Build log, but
+ * not (yet) its own queued job type since nothing re-runs it alone). Same
+ * pending/resolved and cost-tracking shape as identification_runs.
+ */
+export const conditionAssessmentRuns = pgTable(
+  'condition_assessment_runs',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    jobId: uuid('job_id')
+      .notNull()
+      .references(() => jobs.id, { onDelete: 'cascade' }),
+    attempt: integer('attempt').notNull(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    // Null between the row being written and the response coming back --
+    // see identificationRuns.outcome for why.
+    outcome: identificationRunOutcome('outcome'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    response: jsonb('response'),
+    errorMessage: text('error_message'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('condition_assessment_runs_item_idx').on(table.itemId, table.createdAt),
+  ],
+);
+
+/**
  * One row per comparable-match classification call (the LLM pass that
  * decides which imported eBay listings are genuine comparable sales, see
  * server/items/comparable-match.ts) -- the same pending/resolved and

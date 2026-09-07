@@ -1,3 +1,8 @@
+import type {
+  ConditionAssessmentProvider,
+  ConditionAssessmentResult,
+  ConditionField,
+} from '@/server/ai/condition-provider';
 import {
   identityPhotoConverter,
   type PhotoConverter,
@@ -21,11 +26,14 @@ export const DEFAULT_JOB_LEASE_MS = 15 * 60 * 1000;
 export const BASE_RETRY_DELAY_MS = 5_000;
 export const MAX_RETRY_DELAY_MS = 5 * 60 * 1000;
 const IDENTIFICATION_CONFIDENCE_THRESHOLD = 0.7;
+const CONDITION_CONFIDENCE_THRESHOLD = 0.7;
 
 export interface InspectImagesJobDependencies {
   jobs: ResearchJobRepository;
   objectStore: ObjectStore;
   vision: VisionIdentificationProvider;
+  /** Undefined skips condition assessment entirely -- identification alone is still a complete, useful run. */
+  condition?: ConditionAssessmentProvider;
   photoConverter?: PhotoConverter;
   maxAttempts?: number;
   leaseMs?: number;
@@ -90,17 +98,46 @@ export async function runInspectImagesJob(
     )[0];
     if (!leading) throw new Error('Vision provider returned no candidates');
 
-    await dependencies.jobs.saveIdentificationFacts(
-      job.itemId,
-      buildIdentificationFacts(leading, outcome.result.openQuestions),
-    );
+    const identityFacts = buildIdentificationFacts(leading, outcome.result.openQuestions);
+    let identityNeedsInformation =
+      leading.confidence < IDENTIFICATION_CONFIDENCE_THRESHOLD ||
+      outcome.result.openQuestions.length > 0;
+
+    // A second, separate vision-model turn -- condition is its own concern
+    // from identity (see condition-provider.ts), logged to its own Build
+    // log row. Skipped entirely (not a failure) when no provider is
+    // configured; a real call that errors fails the whole job, the same as
+    // identification, rather than silently losing a paid-for attempt.
+    let conditionFacts: IdentificationFactInput[] = [];
+    if (dependencies.condition) {
+      const conditionProvider = dependencies.condition;
+      const { runId: conditionRunId } = await dependencies.jobs.startConditionAssessmentRun({
+        itemId: job.itemId,
+        jobId: job.id,
+        attempt: job.attempt,
+        provider: conditionProvider.provider,
+        model: conditionProvider.model,
+        startedAt: dependencies.now?.() ?? new Date(),
+      });
+      const conditionOutcome = await assessConditionAndLog(
+        dependencies,
+        conditionRunId,
+        photosForIdentification,
+      );
+      conditionFacts = buildConditionFacts(conditionOutcome.result);
+      identityNeedsInformation =
+        identityNeedsInformation || conditionNeedsInformation(conditionOutcome.result);
+    }
+
+    await dependencies.jobs.saveIdentificationFacts(job.itemId, [
+      ...identityFacts,
+      ...conditionFacts,
+    ]);
     await dependencies.jobs.markPhotosInspected(
       photos.map((photo) => photo.id),
     );
 
-    const needsInformation =
-      leading.confidence < IDENTIFICATION_CONFIDENCE_THRESHOLD ||
-      outcome.result.openQuestions.length > 0;
+    const needsInformation = identityNeedsInformation;
     await dependencies.jobs.transitionItemStatus(
       job.itemId,
       needsInformation ? 'NEEDS_INFORMATION' : 'RESEARCHING',
@@ -164,6 +201,95 @@ async function identifyAndLog(
     });
     throw error;
   }
+}
+
+/**
+ * Calls the condition provider and resolves its pending
+ * condition_assessment_runs row -- same shape and isolation as
+ * identifyAndLog.
+ */
+async function assessConditionAndLog(
+  dependencies: InspectImagesJobDependencies,
+  runId: string,
+  photos: PhotoForIdentification[],
+) {
+  try {
+    // Guarded by the `if (dependencies.condition)` check at the one call
+    // site, but that narrowing doesn't survive being passed into this
+    // separate function -- assert non-null rather than re-checking.
+    const outcome = await dependencies.condition!.assess(photos);
+    await dependencies.jobs.completeConditionAssessmentRun({
+      runId,
+      outcome: 'succeeded',
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+      response: outcome.result,
+      completedAt: dependencies.now?.() ?? new Date(),
+    });
+    return outcome;
+  } catch (error) {
+    await dependencies.jobs.completeConditionAssessmentRun({
+      runId,
+      outcome: 'failed',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      completedAt: dependencies.now?.() ?? new Date(),
+    });
+    throw error;
+  }
+}
+
+function conditionNeedsInformation(result: ConditionAssessmentResult): boolean {
+  const fields = [
+    result.overallGrade,
+    result.functionalStatus,
+    result.cosmeticWear,
+    result.defects,
+    result.missingParts,
+  ];
+  return (
+    fields.some((field) => field !== undefined && field.confidence < CONDITION_CONFIDENCE_THRESHOLD) ||
+    result.openQuestions.length > 0
+  );
+}
+
+function buildConditionFacts(result: ConditionAssessmentResult): IdentificationFactInput[] {
+  const facts: IdentificationFactInput[] = [
+    {
+      field: 'condition.overall_grade',
+      value: JSON.stringify(result.overallGrade.grade),
+      confidence: result.overallGrade.confidence,
+      origin: 'image_inference',
+      evidence: result.overallGrade.evidence,
+    },
+  ];
+
+  const optionalFields: [string, ConditionField | undefined][] = [
+    ['condition.functional_status', result.functionalStatus],
+    ['condition.cosmetic_wear', result.cosmeticWear],
+    ['condition.defects', result.defects],
+    ['condition.missing_parts', result.missingParts],
+  ];
+  for (const [field, value] of optionalFields) {
+    if (value === undefined) continue;
+    facts.push({
+      field,
+      value: JSON.stringify(value.value),
+      confidence: value.confidence,
+      origin: 'image_inference',
+      evidence: value.evidence,
+    });
+  }
+
+  if (result.openQuestions.length > 0) {
+    facts.push({
+      field: 'condition.open_questions',
+      value: JSON.stringify(result.openQuestions),
+      confidence: 1,
+      origin: 'image_inference',
+    });
+  }
+
+  return facts;
 }
 
 export function retryDelayMs(attempt: number): number {

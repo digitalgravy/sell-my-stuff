@@ -49,6 +49,28 @@ export interface IdentificationRunCompleteInput {
   completedAt: Date;
 }
 
+export type ConditionAssessmentRunOutcome = 'succeeded' | 'failed';
+
+export interface ConditionAssessmentRunStartInput {
+  itemId: string;
+  jobId: string;
+  attempt: number;
+  provider: string;
+  model: string;
+  startedAt: Date;
+}
+
+export interface ConditionAssessmentRunCompleteInput {
+  runId: string;
+  outcome: ConditionAssessmentRunOutcome;
+  inputTokens?: number;
+  outputTokens?: number;
+  /** The full raw condition-assessment result -- present only on success. */
+  response?: unknown;
+  errorMessage?: string;
+  completedAt: Date;
+}
+
 export type MatchClassificationRunOutcome = 'succeeded' | 'failed';
 
 export interface MatchClassificationRunStartInput {
@@ -107,6 +129,11 @@ export interface ResearchJobRepository {
   /** Logged before the request goes to Anthropic, so the Build log can show a pending entry. */
   startIdentificationRun(entry: IdentificationRunStartInput): Promise<{ runId: string }>;
   completeIdentificationRun(entry: IdentificationRunCompleteInput): Promise<void>;
+  /** Logged before the request goes to Anthropic, so the Build log can show a pending entry -- see startIdentificationRun. */
+  startConditionAssessmentRun(
+    entry: ConditionAssessmentRunStartInput,
+  ): Promise<{ runId: string }>;
+  completeConditionAssessmentRun(entry: ConditionAssessmentRunCompleteInput): Promise<void>;
   markPhotosInspected(photoIds: string[]): Promise<void>;
   transitionItemStatus(itemId: string, status: ItemStatusValue): Promise<void>;
   completeJob(jobId: string, progress: number): Promise<void>;

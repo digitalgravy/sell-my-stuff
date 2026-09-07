@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type {
+  ConditionAssessmentProvider,
+  ConditionAssessmentResult,
+} from '../server/ai/condition-provider';
+import type {
   ConvertedPhoto,
   PhotoConverter,
   PhotoForConversion,
@@ -19,6 +23,8 @@ import {
 } from '../server/jobs/inspect-images-job';
 import type {
   ClaimedJob,
+  ConditionAssessmentRunCompleteInput,
+  ConditionAssessmentRunStartInput,
   IdentificationFactInput,
   IdentificationRunCompleteInput,
   IdentificationRunStartInput,
@@ -42,10 +48,13 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
     retryAt?: Date;
   }[] = [];
   runLogs: (IdentificationRunStartInput & IdentificationRunCompleteInput)[] = [];
+  conditionRunLogs: (ConditionAssessmentRunStartInput & ConditionAssessmentRunCompleteInput)[] = [];
   enqueued: { itemId: string; type: string; idempotencyKey: string }[] = [];
   identityFacts: { field: string; value: string }[] = [];
   private pendingRuns = new Map<string, IdentificationRunStartInput>();
+  private pendingConditionRuns = new Map<string, ConditionAssessmentRunStartInput>();
   private nextRunId = 1;
+  private nextConditionRunId = 1;
 
   async claimNextJob(type: string, maxAttempts: number, _leaseMs: number) {
     const index = this.queue.findIndex(
@@ -78,6 +87,21 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
     const start = this.pendingRuns.get(entry.runId);
     this.pendingRuns.delete(entry.runId);
     this.runLogs.push({ ...(start as IdentificationRunStartInput), ...entry });
+  }
+
+  async startConditionAssessmentRun(entry: ConditionAssessmentRunStartInput) {
+    const runId = `condition-run-${this.nextConditionRunId++}`;
+    this.pendingConditionRuns.set(runId, entry);
+    return { runId };
+  }
+
+  async completeConditionAssessmentRun(entry: ConditionAssessmentRunCompleteInput) {
+    const start = this.pendingConditionRuns.get(entry.runId);
+    this.pendingConditionRuns.delete(entry.runId);
+    this.conditionRunLogs.push({
+      ...(start as ConditionAssessmentRunStartInput),
+      ...entry,
+    });
   }
 
   async markPhotosInspected(photoIds: string[]) {
@@ -153,6 +177,26 @@ class StubVisionProvider implements VisionIdentificationProvider {
     return {
       result: this.result,
       usage: { inputTokens: 1234, outputTokens: 567 },
+    };
+  }
+}
+
+class StubConditionProvider implements ConditionAssessmentProvider {
+  readonly provider = 'stub-condition-provider';
+  readonly model = 'stub-condition-model';
+  received?: PhotoForIdentification[];
+  result: ConditionAssessmentResult | Error;
+
+  constructor(result: ConditionAssessmentResult | Error) {
+    this.result = result;
+  }
+
+  async assess(photos: PhotoForIdentification[]) {
+    this.received = photos;
+    if (this.result instanceof Error) throw this.result;
+    return {
+      result: this.result,
+      usage: { inputTokens: 111, outputTokens: 22 },
     };
   }
 }
@@ -237,6 +281,107 @@ void test('claims a queued job, saves facts and marks the item researching', asy
     (run?.response as { candidates: unknown[] } | undefined)?.candidates
       .length,
     1,
+  );
+});
+
+void test('skips condition assessment entirely when no condition provider is configured', async () => {
+  const jobs = new MemoryResearchJobRepository();
+  const objectStore = new MemoryObjectStore();
+  seedItem(jobs, objectStore, 'item-1b', 'job-1b');
+  const vision = new StubVisionProvider({
+    candidates: [
+      { itemType: 'wireless keyboard', confidence: 0.92, evidence: 'Apple logo visible' },
+    ],
+    openQuestions: [],
+  });
+
+  await runInspectImagesJob({ jobs, objectStore, vision });
+
+  assert.equal(jobs.conditionRunLogs.length, 0);
+  assert.ok(!jobs.savedFacts.some((fact) => fact.field.startsWith('condition.')));
+});
+
+void test('runs condition assessment alongside identification and saves condition facts', async () => {
+  const jobs = new MemoryResearchJobRepository();
+  const objectStore = new MemoryObjectStore();
+  seedItem(jobs, objectStore, 'item-5', 'job-5');
+  const vision = new StubVisionProvider({
+    candidates: [
+      { itemType: 'wireless keyboard', confidence: 0.92, evidence: 'Apple logo visible' },
+    ],
+    openQuestions: [],
+  });
+  const condition = new StubConditionProvider({
+    overallGrade: { grade: 'very_good', confidence: 0.9, evidence: 'Minor scuffs on the base' },
+    cosmeticWear: { value: 'Light scuffing on the plastic underside', confidence: 0.85, evidence: 'Visible in photo 1' },
+    openQuestions: [],
+  });
+
+  const result = await runInspectImagesJob({ jobs, objectStore, vision, condition });
+
+  assert.deepEqual(result, { claimed: true, itemId: 'item-5', outcome: 'succeeded' });
+  assert.deepEqual(jobs.statusHistory, ['IDENTIFYING', 'RESEARCHING']);
+  assert.equal(condition.received?.[0]?.base64, Buffer.from([1, 2, 3]).toString('base64'));
+
+  assert.equal(jobs.conditionRunLogs.length, 1);
+  const conditionRun = jobs.conditionRunLogs[0];
+  assert.equal(conditionRun?.outcome, 'succeeded');
+  assert.equal(conditionRun?.provider, 'stub-condition-provider');
+  assert.equal(conditionRun?.inputTokens, 111);
+
+  const gradeFact = jobs.savedFacts.find((fact) => fact.field === 'condition.overall_grade');
+  assert.equal(gradeFact?.value, JSON.stringify('very_good'));
+  assert.equal(gradeFact?.confidence, 0.9);
+  const wearFact = jobs.savedFacts.find((fact) => fact.field === 'condition.cosmetic_wear');
+  assert.equal(wearFact?.value, JSON.stringify('Light scuffing on the plastic underside'));
+});
+
+void test('routes low-confidence condition assessment to needs information even when identification is confident', async () => {
+  const jobs = new MemoryResearchJobRepository();
+  const objectStore = new MemoryObjectStore();
+  seedItem(jobs, objectStore, 'item-6', 'job-6');
+  const vision = new StubVisionProvider({
+    candidates: [
+      { itemType: 'wireless keyboard', confidence: 0.95, evidence: 'Apple logo visible' },
+    ],
+    openQuestions: [],
+  });
+  const condition = new StubConditionProvider({
+    overallGrade: { grade: 'good', confidence: 0.4, evidence: 'Hard to tell wear level from the angle shown' },
+    openQuestions: ["Can you show the underside so we can check for scratches?"],
+  });
+
+  await runInspectImagesJob({ jobs, objectStore, vision, condition });
+
+  assert.deepEqual(jobs.statusHistory, ['IDENTIFYING', 'NEEDS_INFORMATION']);
+  assert.deepEqual(jobs.enqueued, []);
+  const openQuestionsFact = jobs.savedFacts.find((fact) => fact.field === 'condition.open_questions');
+  assert.deepEqual(JSON.parse(openQuestionsFact?.value ?? '[]'), [
+    'Can you show the underside so we can check for scratches?',
+  ]);
+});
+
+void test('a failing condition provider fails the whole inspect_images job', async () => {
+  const jobs = new MemoryResearchJobRepository();
+  const objectStore = new MemoryObjectStore();
+  seedItem(jobs, objectStore, 'item-7', 'job-7');
+  const vision = new StubVisionProvider({
+    candidates: [
+      { itemType: 'wireless keyboard', confidence: 0.95, evidence: 'Apple logo visible' },
+    ],
+    openQuestions: [],
+  });
+  const condition = new StubConditionProvider(new Error('condition provider timed out'));
+
+  const result = await runInspectImagesJob({ jobs, objectStore, vision, condition, maxAttempts: 5 });
+
+  assert.deepEqual(result, { claimed: true, itemId: 'item-7', outcome: 'failed' });
+  assert.equal(jobs.conditionRunLogs.length, 1);
+  assert.equal(jobs.conditionRunLogs[0]?.outcome, 'failed');
+  assert.equal(jobs.conditionRunLogs[0]?.errorMessage, 'condition provider timed out');
+  assert.ok(
+    !jobs.savedFacts.some((fact) => fact.field.startsWith('identity.') || fact.field.startsWith('condition.')),
+    'facts are only saved once both calls succeed',
   );
 });
 

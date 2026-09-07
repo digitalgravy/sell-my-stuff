@@ -135,7 +135,7 @@ export interface ItemDetail {
   listing?: ListingInfo;
   /** Undefined until real comparable-sales research exists. */
   evidence?: EvidenceInfo;
-  /** Real Anthropic API spend so far (identification + match classification calls), in USD -- 0, not undefined, when nothing has run yet. */
+  /** Real Anthropic API spend so far (identification + condition assessment + match classification calls), in USD -- 0, not undefined, when nothing has run yet. */
   aiCostUsd: number;
   buildSteps: BuildStep[];
 }

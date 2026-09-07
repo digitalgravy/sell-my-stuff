@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildStepsFromConditionRuns,
   buildStepsFromCorrections,
   buildStepsFromImports,
   buildStepsFromResearchJobs,
@@ -12,19 +13,19 @@ import {
 
 void test('derivePhases marks Identified done only when identity facts actually exist', () => {
   assert.equal(
-    derivePhases({ status: 'INBOX', hasIdentityFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'INBOX', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false }).find(
       (p) => p.key === 'identified',
     )?.state,
     'not_started',
   );
   assert.equal(
-    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false }).find(
       (p) => p.key === 'identified',
     )?.state,
     'pending',
   );
   assert.equal(
-    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasEvidence: false }).find(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false }).find(
       (p) => p.key === 'identified',
     )?.state,
     'done',
@@ -32,7 +33,7 @@ void test('derivePhases marks Identified done only when identity facts actually 
 });
 
 void test('derivePhases never marks a genuinely unbuilt phase as done or pending', () => {
-  const phases = derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasEvidence: false });
+  const phases = derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false });
   const unbuilt = phases.filter((p) => p.key !== 'identified' && p.key !== 'researched');
   assert.ok(unbuilt.every((p) => p.state === 'not_started'));
   assert.equal(unbuilt.length, 2);
@@ -40,23 +41,93 @@ void test('derivePhases never marks a genuinely unbuilt phase as done or pending
 
 void test('derivePhases marks Researched pending while status is RESEARCHING with no evidence yet, done once evidence exists', () => {
   assert.equal(
-    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasEvidence: false }).find(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false }).find(
       (p) => p.key === 'researched',
     )?.state,
     'pending',
   );
   assert.equal(
-    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasEvidence: true }).find(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: true }).find(
       (p) => p.key === 'researched',
     )?.state,
     'done',
   );
   assert.equal(
-    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false }).find(
       (p) => p.key === 'researched',
     )?.state,
     'not_started',
   );
+});
+
+void test('derivePhases marks Assessed done only when condition facts actually exist', () => {
+  assert.equal(
+    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false }).find(
+      (p) => p.key === 'assessed',
+    )?.state,
+    'pending',
+  );
+  assert.equal(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: true, hasEvidence: false }).find(
+      (p) => p.key === 'assessed',
+    )?.state,
+    'done',
+  );
+  assert.equal(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false }).find(
+      (p) => p.key === 'assessed',
+    )?.state,
+    'not_started',
+  );
+});
+
+void test('buildStepsFromConditionRuns maps a successful run to its own llm step, separate from identification', () => {
+  const steps = buildStepsFromConditionRuns(
+    [
+      {
+        id: 'condition-run-1',
+        attempt: 1,
+        provider: 'anthropic',
+        model: 'claude-sonnet-5',
+        outcome: 'succeeded',
+        inputTokens: 90,
+        outputTokens: 15,
+        response: { overallGrade: { grade: 'good' } },
+        startedAt: '2026-09-07T00:00:00.000Z',
+        completedAt: '2026-09-07T00:00:04.000Z',
+      },
+    ],
+    3,
+  );
+
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0]?.stage, 'Assess condition');
+  assert.equal(steps[0]?.outcome, 'succeeded');
+  assert.equal(steps[0]?.durationMs, 4000);
+  assert.match(steps[0]?.blocks[0]?.content ?? '', /assessing the cosmetic and functional condition/);
+  assert.equal(steps[0]?.blocks[1]?.meta, '3 photos');
+});
+
+void test('buildStepsFromConditionRuns maps a failed run to an error block', () => {
+  const steps = buildStepsFromConditionRuns(
+    [
+      {
+        id: 'condition-run-2',
+        attempt: 1,
+        provider: 'anthropic',
+        model: 'claude-sonnet-5',
+        outcome: 'failed',
+        errorMessage: 'condition provider timed out',
+        startedAt: '2026-09-07T00:00:00.000Z',
+        completedAt: '2026-09-07T00:00:02.000Z',
+      },
+    ],
+    1,
+  );
+
+  assert.equal(steps[0]?.outcome, 'failed');
+  assert.equal(steps[0]?.blocks.at(-1)?.label, 'Error');
+  assert.equal(steps[0]?.blocks.at(-1)?.content, 'condition provider timed out');
 });
 
 void test('deriveAttention returns one required task per open question', () => {
