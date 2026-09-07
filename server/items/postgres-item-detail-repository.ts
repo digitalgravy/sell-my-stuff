@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
 import {
+  answerResolutionRuns,
   comparableSales,
   conditionAssessmentRuns,
   factCorrections,
@@ -15,31 +16,45 @@ import {
   photos,
   researchCaptures,
 } from '@/db/schema';
+import type { FactAnswerInput } from '@/server/ai/answer-resolution-provider';
+import { getAnthropicAnswerResolutionProvider } from '@/server/ai/anthropic-answer-resolution-provider';
 import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-comparable-match-provider';
 import { estimateCostUsd } from '@/server/ai/pricing';
 import { getDatabase } from '@/server/db/client';
 import { INSPECT_IMAGES_JOB_TYPE } from '@/server/jobs/inspect-images-job';
 import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from '@/server/jobs/research-comparable-sales-job';
 
+import {
+  completeAnswerResolutionRun,
+  startAnswerResolutionRun,
+} from './answer-resolution-runs';
 import { buildIdentityFactsForMatching, classifyComparableSales } from './comparable-match';
 import { deriveActivityState } from './homepage-snapshot';
-import { deleteItemEventBySource, ITEM_EVENT_KIND, logItemEvent } from './item-events';
+import {
+  deleteItemEventBySource,
+  ITEM_EVENT_KIND,
+  logItemEvent,
+  setItemEventDetail,
+} from './item-events';
 import type {
   BuildStep,
   ComparableSale,
   ConfirmFactOutcome,
   CorrectFactOutcome,
   EvidenceInfo,
+  FactAnswerSubmission,
   ItemDetail,
   ItemDetailFact,
   ItemDetailPhoto,
   ItemDetailRepository,
   RegenerateResearchOutcome,
+  ResolveFactAnswersOutcome,
   RetryOutcome,
   UndoCorrectionOutcome,
 } from './item-detail-repository';
 import {
   buildStepFromSimpleEvent,
+  buildStepsFromAnswerResolutionRuns,
   buildStepsFromConditionRuns,
   buildStepsFromCorrections,
   buildStepsFromImports,
@@ -47,6 +62,7 @@ import {
   buildStepsFromRuns,
   deriveAttention,
   derivePhases,
+  type AnswerResolutionChange,
 } from './item-detail-view-model';
 import {
   completeMatchClassificationRun,
@@ -93,6 +109,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       runRows,
       conditionRunRows,
       matchRunRows,
+      answerResolutionRunRows,
       [job],
       comparableSaleRows,
       captureRows,
@@ -179,6 +196,21 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .where(eq(matchClassificationRuns.itemId, itemId))
         .orderBy(desc(matchClassificationRuns.startedAt)),
       database
+        .select({
+          id: answerResolutionRuns.id,
+          provider: answerResolutionRuns.provider,
+          model: answerResolutionRuns.model,
+          answerCount: answerResolutionRuns.answerCount,
+          outcome: answerResolutionRuns.outcome,
+          inputTokens: answerResolutionRuns.inputTokens,
+          outputTokens: answerResolutionRuns.outputTokens,
+          errorMessage: answerResolutionRuns.errorMessage,
+          startedAt: answerResolutionRuns.startedAt,
+          completedAt: answerResolutionRuns.completedAt,
+        })
+        .from(answerResolutionRuns)
+        .where(eq(answerResolutionRuns.itemId, itemId)),
+      database
         .select({ state: jobs.state, lastError: jobs.lastError })
         .from(jobs)
         .where(and(eq(jobs.itemId, itemId), eq(jobs.type, INSPECT_IMAGES_JOB_TYPE)))
@@ -253,6 +285,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     const identificationRunById = new Map(runRows.map((row) => [row.id, row]));
     const conditionRunById = new Map(conditionRunRows.map((row) => [row.id, row]));
     const matchRunById = new Map(matchRunRows.map((row) => [row.id, row]));
+    const answerResolutionRunById = new Map(answerResolutionRunRows.map((row) => [row.id, row]));
     const captureById = new Map(captureRows.map((row) => [row.id, row]));
 
     const buildSteps = eventRows.flatMap((event): BuildStep[] => {
@@ -322,6 +355,27 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
             },
           ]);
         }
+        case ITEM_EVENT_KIND.ANSWERS_RESOLVED: {
+          const run = event.sourceId ? answerResolutionRunById.get(event.sourceId) : undefined;
+          if (!run) return [];
+          const detail = event.detail as { changes?: AnswerResolutionChange[] } | null;
+          return buildStepsFromAnswerResolutionRuns([
+            {
+              id: event.id,
+              sequence: event.sequence,
+              provider: run.provider,
+              model: run.model,
+              answerCount: run.answerCount,
+              outcome: run.outcome ?? undefined,
+              inputTokens: run.inputTokens ?? undefined,
+              outputTokens: run.outputTokens ?? undefined,
+              errorMessage: run.errorMessage ?? undefined,
+              startedAt: run.startedAt.toISOString(),
+              completedAt: run.completedAt?.toISOString(),
+              changes: detail?.changes,
+            },
+          ]);
+        }
         case ITEM_EVENT_KIND.COMPARABLE_SALES_IMPORTED: {
           const detail = event.detail as { count?: number } | null;
           const capture =
@@ -368,12 +422,12 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       }
     });
 
-    // What this item has cost so far in Anthropic API spend across all
-    // three call types (identification, condition assessment, match
-    // classification) -- a real, measured cost that nets against the
-    // estimated sale price, not a fabricated marketplace-fee figure.
-    // Pending/failed runs with no token counts contribute 0, not undefined,
-    // so this always sums cleanly.
+    // What this item has cost so far in Anthropic API spend across all four
+    // call types (identification, condition assessment, match
+    // classification, answer resolution) -- a real, measured cost that
+    // nets against the estimated sale price, not a fabricated
+    // marketplace-fee figure. Pending/failed runs with no token counts
+    // contribute 0, not undefined, so this always sums cleanly.
     const sumRunCosts = (rows: { model: string; inputTokens: number | null; outputTokens: number | null }[]) =>
       rows.reduce(
         (total, row) =>
@@ -381,7 +435,10 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         0,
       );
     const aiCostUsd =
-      sumRunCosts(runRows) + sumRunCosts(conditionRunRows) + sumRunCosts(matchRunRows);
+      sumRunCosts(runRows) +
+      sumRunCosts(conditionRunRows) +
+      sumRunCosts(matchRunRows) +
+      sumRunCosts(answerResolutionRunRows);
 
     return {
       id: item.id,
@@ -663,6 +720,106 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     return { ok: true };
   }
 
+  async resolveFactAnswers(
+    itemId: string,
+    answers: FactAnswerSubmission[],
+  ): Promise<ResolveFactAnswersOutcome> {
+    if (answers.length === 0) return { ok: false, reason: 'No answers were given' };
+    const database = getDatabase();
+
+    const rows = await database
+      .select({
+        field: itemFacts.field,
+        value: itemFacts.value,
+        confidence: itemFacts.confidence,
+        evidence: itemFacts.evidence,
+      })
+      .from(itemFacts)
+      .where(eq(itemFacts.itemId, itemId));
+    const factByField = new Map(rows.map((row) => [row.field, row]));
+
+    const provider = getAnthropicAnswerResolutionProvider();
+    const inputs: FactAnswerInput[] = answers.map((answer) => {
+      const existing = factByField.get(answer.field);
+      return {
+        field: answer.field,
+        currentValue: existing ? formatFactValueForPrompt(existing.value) : '(not yet recorded)',
+        evidence: existing?.evidence ?? undefined,
+        question: answer.question,
+        answer: answer.answer,
+      };
+    });
+
+    const { runId, eventId } = await startAnswerResolutionRun({
+      itemId,
+      provider: provider.provider,
+      model: provider.model,
+      answerCount: inputs.length,
+    });
+
+    let outcome;
+    try {
+      outcome = await provider.resolve(inputs);
+    } catch (error) {
+      await completeAnswerResolutionRun({
+        runId,
+        outcome: 'failed',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return { ok: false, reason: 'Could not resolve these answers' };
+    }
+    await completeAnswerResolutionRun({
+      runId,
+      outcome: 'succeeded',
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+      response: outcome.result,
+    });
+
+    const changes: {
+      field: string;
+      previousValue: string | null;
+      newValue: string;
+      previousConfidence?: number;
+      confidence: number;
+    }[] = [];
+    await database.transaction(async (tx) => {
+      for (const resolved of outcome.result.facts) {
+        const existing = factByField.get(resolved.field);
+        const newValue = JSON.stringify(resolved.value);
+        await tx
+          .insert(itemFacts)
+          .values({
+            id: randomUUID(),
+            itemId,
+            field: resolved.field,
+            value: newValue,
+            confidence: resolved.confidence,
+            origin: 'user_confirmed',
+          })
+          .onConflictDoUpdate({
+            target: [itemFacts.itemId, itemFacts.field],
+            set: {
+              value: sql`excluded.value`,
+              confidence: sql`excluded.confidence`,
+              origin: sql`excluded.origin`,
+              retrievedAt: sql`now()`,
+            },
+          });
+        changes.push({
+          field: resolved.field,
+          previousValue: existing?.value ?? null,
+          newValue,
+          previousConfidence: existing?.confidence,
+          confidence: resolved.confidence,
+        });
+      }
+      await setItemEventDetail(eventId, { changes }, tx);
+    });
+
+    return { ok: true };
+  }
+
   async undoCorrection(itemId: string, correctionId: string): Promise<UndoCorrectionOutcome> {
     const database = getDatabase();
     const [correction] = await database
@@ -735,6 +892,13 @@ function parseFactValue(rawValue: string): unknown {
   } catch {
     return rawValue;
   }
+}
+
+/** A clean, human-readable rendering of a raw JSON-encoded fact value for an LLM prompt -- no quotes around a plain string, no noisy escaping. */
+function formatFactValueForPrompt(rawValue: string): string {
+  const parsed = parseFactValue(rawValue);
+  if (Array.isArray(parsed)) return parsed.join(', ');
+  return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
 }
 
 function parseStringArray(rawValue: string | undefined): string[] {

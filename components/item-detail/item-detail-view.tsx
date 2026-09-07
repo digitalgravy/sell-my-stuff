@@ -70,6 +70,7 @@ import {
   relativeTime,
   statusLabel,
 } from './format';
+import { ResolveFactsDialog, type FactAnswerSubmission } from './resolve-facts-dialog';
 
 type LoadStatus = 'loading' | 'ready' | 'error' | 'not-found';
 
@@ -137,6 +138,8 @@ export function ItemDetailView({
   const [undoingEndpoint, setUndoingEndpoint] = useState<string | null>(null);
   const [regeneratingResearch, setRegeneratingResearch] = useState(false);
   const [confirmingField, setConfirmingField] = useState<string | null>(null);
+  const [resolveFactsOpen, setResolveFactsOpen] = useState(false);
+  const [resolvingAnswers, setResolvingAnswers] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,6 +316,33 @@ export function ItemDetailView({
     [apiBase, detail, readOnly],
   );
 
+  const resolveAnswers = useCallback(
+    (answers: FactAnswerSubmission[]) => {
+      if (readOnly) {
+        setResolveFactsOpen(false);
+        return;
+      }
+      setResolvingAnswers(true);
+      fetch(`${apiBase}/facts/resolve-answers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers }),
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error();
+          return requestItemDetail(apiBase);
+        })
+        .then((data) => {
+          setDetail(data);
+          setStatus('ready');
+          setResolveFactsOpen(false);
+        })
+        .catch(() => undefined)
+        .finally(() => setResolvingAnswers(false));
+    },
+    [apiBase, readOnly],
+  );
+
   const handleAttentionCta = useCallback(
     (task: AttentionTask) => {
       if (task.ctaLabel === 'Correct' && task.field) {
@@ -331,8 +361,8 @@ export function ItemDetailView({
         regenerateResearch();
         return;
       }
-      if (task.ctaLabel === 'Review facts') {
-        document.getElementById(FACTS_SECTION_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (task.ctaLabel === 'Review facts' || task.ctaLabel === 'Add evidence') {
+        setResolveFactsOpen(true);
       }
     },
     [openCorrection, retry, regenerateResearch],
@@ -570,6 +600,14 @@ export function ItemDetailView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ResolveFactsDialog
+        open={resolveFactsOpen}
+        onOpenChange={setResolveFactsOpen}
+        facts={(detail?.facts ?? []).filter((fact) => fact.confidence < LOW_CONFIDENCE_THRESHOLD)}
+        onSubmit={resolveAnswers}
+        submitting={resolvingAnswers}
+      />
     </main>
   );
 }
@@ -1031,6 +1069,7 @@ function AttentionGroup({
     task.ctaLabel === 'Retry' ||
     task.ctaLabel === 'Prepare eBay search' ||
     task.ctaLabel === 'Review facts' ||
+    task.ctaLabel === 'Add evidence' ||
     (task.ctaLabel === 'Search eBay' && task.href !== undefined);
 
   return (

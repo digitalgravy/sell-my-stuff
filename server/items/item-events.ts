@@ -23,6 +23,7 @@ export const ITEM_EVENT_KIND = {
   FACT_CORRECTED: 'fact_corrected',
   FACT_CONFIRMED: 'fact_confirmed',
   SALE_EXCLUDED_TOGGLED: 'sale_excluded_toggled',
+  ANSWERS_RESOLVED: 'answers_resolved',
 } as const;
 
 export type ItemEventKind = (typeof ITEM_EVENT_KIND)[keyof typeof ITEM_EVENT_KIND];
@@ -39,8 +40,8 @@ export interface LogItemEventInput {
   detail?: unknown;
 }
 
-/** Anything with `.insert`/`.delete` bound to the app's schema -- the main database handle or a transaction, so callers already inside a `database.transaction(...)` can log atomically with their real write. */
-type EventLoggableDb = Pick<PostgresJsDatabase<typeof schema>, 'insert' | 'delete'>;
+/** Anything with `.insert`/`.update`/`.delete` bound to the app's schema -- the main database handle or a transaction, so callers already inside a `database.transaction(...)` can log atomically with their real write. */
+type EventLoggableDb = Pick<PostgresJsDatabase<typeof schema>, 'insert' | 'update' | 'delete'>;
 
 /** Inserted once per loggable action -- see item_events' doc comment in db/schema.ts for why this exists instead of deriving the Build log from six separate tables. */
 export async function logItemEvent(
@@ -58,6 +59,21 @@ export async function logItemEvent(
     detail: input.detail,
   });
   return { id };
+}
+
+/**
+ * Attaches detail to an already-logged event, once it's known -- the one
+ * case is answers_resolved: the event is logged at the start of the batch
+ * call (so the Build log can show it pending), but the actual pre/post
+ * change list is only known once the call resolves and the facts are
+ * saved.
+ */
+export async function setItemEventDetail(
+  id: string,
+  detail: unknown,
+  db: EventLoggableDb = getDatabase(),
+): Promise<void> {
+  await db.update(itemEvents).set({ detail }).where(eq(itemEvents.id, id));
 }
 
 /**

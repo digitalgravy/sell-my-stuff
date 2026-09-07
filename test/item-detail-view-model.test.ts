@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildStepFromSimpleEvent,
+  buildStepsFromAnswerResolutionRuns,
   buildStepsFromConditionRuns,
   buildStepsFromCorrections,
   buildStepsFromImports,
@@ -379,4 +380,61 @@ void test('buildStepFromSimpleEvent renders a manual retry with no detail needed
   assert.equal(step.stage, 'Retry identification');
   assert.equal(step.type, 'tool');
   assert.equal(step.outcome, 'succeeded');
+});
+
+void test('buildStepsFromAnswerResolutionRuns shows one block per changed fact under a single step', () => {
+  const steps = buildStepsFromAnswerResolutionRuns([
+    {
+      id: 'event-7',
+      sequence: 7,
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      answerCount: 2,
+      outcome: 'succeeded',
+      inputTokens: 200,
+      outputTokens: 40,
+      startedAt: '2026-09-07T00:00:00.000Z',
+      completedAt: '2026-09-07T00:00:03.000Z',
+      changes: [
+        {
+          field: 'condition.missing_parts',
+          previousValue: '"Power cable appears attached but no adapter"',
+          newValue: '"Original adapter and box both included"',
+          previousConfidence: 0.4,
+          confidence: 0.97,
+        },
+        {
+          field: 'condition.functional_status',
+          previousValue: '"Appears functional"',
+          newValue: '"Confirmed working, tested by owner"',
+          previousConfidence: 0.6,
+          confidence: 0.95,
+        },
+      ],
+    },
+  ]);
+
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0]?.stage, 'Resolve answers');
+  assert.equal(steps[0]?.outcome, 'succeeded');
+  assert.equal(steps[0]?.durationMs, 3000);
+  assert.equal(steps[0]?.blocks.length, 4); // system prompt + assistant response + 2 changes
+  assert.equal(steps[0]?.blocks[2]?.label, 'condition.missing_parts');
+  assert.match(steps[0]?.blocks[2]?.content ?? '', /Power cable appears attached.*→.*Original adapter and box/);
+  assert.equal(steps[0]?.blocks[3]?.label, 'condition.functional_status');
+});
+
+void test('buildStepsFromAnswerResolutionRuns shows a pending state before the response resolves', () => {
+  const steps = buildStepsFromAnswerResolutionRuns([
+    {
+      id: 'event-8',
+      sequence: 8,
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      answerCount: 3,
+      startedAt: '2026-09-07T00:00:00.000Z',
+    },
+  ]);
+  assert.equal(steps[0]?.outcome, 'pending');
+  assert.match(steps[0]?.detail, /submitted, waiting for a response/);
 });

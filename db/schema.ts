@@ -376,6 +376,41 @@ export const conditionAssessmentRuns = pgTable(
  * cost-tracking shape as identification_runs, so both AI call types show up
  * in the Build log and roll up into the same per-item AI cost total.
  */
+/**
+ * One row per batched answer-resolution call (server/ai/answer-resolution-provider.ts)
+ * -- the LLM pass that turns a person's own plain-language answers to
+ * clarifying questions about low-confidence facts into clean, confident
+ * values. Same pending/resolved and cost-tracking shape as the other three
+ * run tables; no jobId/attempt since this is triggered by a direct user
+ * action (the "resolve low-confidence facts" modal), not a queued job.
+ */
+export const answerResolutionRuns = pgTable(
+  'answer_resolution_runs',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    answerCount: integer('answer_count').notNull(),
+    // Null while the request is in flight -- see identificationRuns.outcome.
+    outcome: identificationRunOutcome('outcome'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    response: jsonb('response'),
+    errorMessage: text('error_message'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('answer_resolution_runs_item_idx').on(table.itemId, table.createdAt),
+  ],
+);
+
 export const matchClassificationRuns = pgTable(
   'match_classification_runs',
   {

@@ -1,3 +1,4 @@
+import { ANSWER_RESOLUTION_SYSTEM_PROMPT } from '@/server/ai/anthropic-answer-resolution-provider';
 import { MATCH_SYSTEM_PROMPT } from '@/server/ai/anthropic-comparable-match-provider';
 import { CONDITION_SYSTEM_PROMPT } from '@/server/ai/anthropic-condition-provider';
 import { SYSTEM_PROMPT } from '@/server/ai/anthropic-vision-provider';
@@ -387,6 +388,86 @@ export function buildStepsFromMatchRuns(runs: MatchRunForBuildStep[]): BuildStep
                 meta: costMeta(run.model, run.inputTokens, run.outputTokens),
                 content: `Classified ${run.listingCount} listing${run.listingCount === 1 ? '' : 's'}.`,
               },
+            ]
+          : run.outcome === 'failed'
+            ? [{ label: 'Error', content: run.errorMessage ?? 'Unknown error' }]
+            : [{ label: 'Waiting', content: 'No response from Anthropic yet.' }]),
+      ],
+    };
+  });
+}
+
+export interface AnswerResolutionChange {
+  field: string;
+  previousValue: string | null;
+  newValue: string;
+  previousConfidence?: number;
+  confidence?: number;
+}
+
+export interface AnswerResolutionRunForBuildStep {
+  id: string;
+  sequence: number;
+  provider: string;
+  model: string;
+  answerCount: number;
+  outcome?: 'succeeded' | 'failed';
+  inputTokens?: number;
+  outputTokens?: number;
+  errorMessage?: string;
+  startedAt: string;
+  completedAt?: string;
+  /** The actual per-fact pre/post values -- absent while pending. */
+  changes?: AnswerResolutionChange[];
+}
+
+/**
+ * One build step per batched answer-resolution call -- every fact a
+ * clarifying-question answer touched shows as its own block with a
+ * pre/post value, all under the one step this really was (one LLM call,
+ * one Build log entry), rather than one entry per fact changed.
+ */
+export function buildStepsFromAnswerResolutionRuns(
+  runs: AnswerResolutionRunForBuildStep[],
+): BuildStep[] {
+  return runs.map((run) => {
+    const detail =
+      run.outcome === 'succeeded'
+        ? `Answer resolution · ${run.answerCount} answer${run.answerCount === 1 ? '' : 's'} resolved`
+        : run.outcome === 'failed'
+          ? `Answer resolution · ${run.answerCount} answer${run.answerCount === 1 ? '' : 's'} · failed`
+          : `Answer resolution · ${run.answerCount} answer${run.answerCount === 1 ? '' : 's'} · submitted, waiting for a response`;
+    return {
+      id: run.id,
+      sequence: run.sequence,
+      stage: 'Resolve answers',
+      detail,
+      type: 'llm',
+      outcome: run.outcome ?? 'pending',
+      durationMs:
+        run.outcome === undefined || !run.completedAt
+          ? 0
+          : Math.max(
+              0,
+              new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(),
+            ),
+      blocks: [
+        {
+          label: 'System prompt',
+          meta: `${run.provider} · ${run.model}`,
+          content: ANSWER_RESOLUTION_SYSTEM_PROMPT,
+        },
+        ...(run.outcome === 'succeeded'
+          ? [
+              {
+                label: 'Assistant response',
+                meta: costMeta(run.model, run.inputTokens, run.outputTokens),
+                content: `Resolved ${run.answerCount} answer${run.answerCount === 1 ? '' : 's'}.`,
+              },
+              ...(run.changes ?? []).map((change) => ({
+                label: change.field,
+                content: `${change.previousValue ?? '(no prior value)'} → ${change.newValue}`,
+              })),
             ]
           : run.outcome === 'failed'
             ? [{ label: 'Error', content: run.errorMessage ?? 'Unknown error' }]

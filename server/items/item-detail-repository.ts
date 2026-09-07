@@ -152,6 +152,14 @@ export type CorrectFactOutcome = { ok: true } | { ok: false; reason: string };
 export type ConfirmFactOutcome = { ok: true } | { ok: false; reason: string };
 export type UndoCorrectionOutcome = { ok: true } | { ok: false; reason: string };
 export type RegenerateResearchOutcome = { ok: true } | { ok: false; reason: string };
+export type ResolveFactAnswersOutcome = { ok: true } | { ok: false; reason: string };
+
+export interface FactAnswerSubmission {
+  field: string;
+  /** The question text the user actually saw and answered -- sent to the LLM alongside the answer for context. */
+  question: string;
+  answer: string;
+}
 
 export interface ItemDetailRepository {
   getItemDetail(itemId: string): Promise<ItemDetail | null>;
@@ -183,6 +191,16 @@ export interface ItemDetailRepository {
    * trail the same as an edit is.
    */
   confirmFact(itemId: string, field: string): Promise<ConfirmFactOutcome>;
+  /**
+   * Turns a batch of plain-language answers to clarifying questions about
+   * low-confidence facts into clean, confident values -- one Anthropic
+   * call for the whole batch (see server/ai/answer-resolution-provider.ts),
+   * logged as one Build log entry covering every fact it changed.
+   */
+  resolveFactAnswers(
+    itemId: string,
+    answers: FactAnswerSubmission[],
+  ): Promise<ResolveFactAnswersOutcome>;
   /** Manually re-queues research_comparable_sales -- e.g. after correcting a fact the eBay search was built from. */
   regenerateResearch(itemId: string): Promise<RegenerateResearchOutcome>;
   /**
