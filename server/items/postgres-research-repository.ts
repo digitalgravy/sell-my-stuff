@@ -9,6 +9,7 @@ import {
   completeConditionAssessmentRun as completeConditionAssessmentRunRow,
   startConditionAssessmentRun as startConditionAssessmentRunRow,
 } from './condition-assessment-runs';
+import { ITEM_EVENT_KIND, logItemEvent as logItemEventRow } from './item-events';
 import {
   completeMatchClassificationRun as completeMatchClassificationRunRow,
   startMatchClassificationRun as startMatchClassificationRunRow,
@@ -23,6 +24,7 @@ import type {
   IdentificationRunStartInput,
   ItemPhotoForResearch,
   ItemStatusValue,
+  JobEventInput,
   MatchClassificationRunCompleteInput,
   MatchClassificationRunStartInput,
   ResearchJobRepository,
@@ -149,6 +151,13 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
       model: entry.model,
       startedAt: entry.startedAt,
     });
+    await logItemEventRow({
+      itemId: entry.itemId,
+      kind: ITEM_EVENT_KIND.IDENTIFICATION_RUN,
+      sourceTable: 'identification_runs',
+      sourceId: id,
+      summary: `Identification attempt ${entry.attempt}`,
+    });
     return { runId: id };
   }
 
@@ -261,6 +270,7 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
       .onConflictDoNothing({ target: jobs.idempotencyKey });
   }
 
+  /** Only ever called for automated browser-research imports -- a manual capture import goes through PostgresCaptureInboxRepository instead, so logging unconditionally here doesn't need to distinguish the source. */
   async saveComparableSales(itemId: string, sales: ComparableSaleInput[]): Promise<void> {
     if (sales.length === 0) return;
     const database = getDatabase();
@@ -276,6 +286,12 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
         excludedReason: sale.excludedReason ?? null,
       })),
     );
+    await logItemEventRow({
+      itemId,
+      kind: ITEM_EVENT_KIND.COMPARABLE_SALES_IMPORTED,
+      summary: `Imported ${sales.length} comparable sale${sales.length === 1 ? '' : 's'} from automated eBay research`,
+      detail: { count: sales.length, source: 'auto_browser' },
+    });
   }
 
   async startMatchClassificationRun(
@@ -288,5 +304,9 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
     entry: MatchClassificationRunCompleteInput,
   ): Promise<void> {
     return completeMatchClassificationRunRow(entry);
+  }
+
+  async logItemEvent(entry: JobEventInput): Promise<void> {
+    await logItemEventRow(entry);
   }
 }

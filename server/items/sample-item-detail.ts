@@ -28,6 +28,7 @@ export const SAMPLE_PHOTOS: Record<string, SamplePhotoStyle> = {
 const BUILD_STEPS: BuildStep[] = [
   {
     id: 'step-1',
+    sequence: 1,
     stage: 'Identify item',
     detail: 'Vision model turn · attempt 1 · 2 candidates',
     type: 'llm',
@@ -78,6 +79,7 @@ const BUILD_STEPS: BuildStep[] = [
   },
   {
     id: 'step-2',
+    sequence: 2,
     stage: 'Assess condition',
     detail: 'Vision model turn · condition pass · succeeded',
     type: 'llm',
@@ -113,6 +115,7 @@ const BUILD_STEPS: BuildStep[] = [
   },
   {
     id: 'step-3',
+    sequence: 3,
     stage: 'Research comparable sales',
     detail: 'eBay sold-listings search · 14 results',
     type: 'tool',
@@ -144,6 +147,7 @@ const BUILD_STEPS: BuildStep[] = [
   },
   {
     id: 'step-4',
+    sequence: 4,
     stage: 'Aggregate pricing',
     detail: 'Statistics over 12 matched comparables',
     type: 'compute',
@@ -172,6 +176,7 @@ const BUILD_STEPS: BuildStep[] = [
   },
   {
     id: 'step-5',
+    sequence: 5,
     stage: 'Draft listing copy',
     detail: 'Vision + facts turn · listing draft',
     type: 'llm',
@@ -199,6 +204,7 @@ const BUILD_STEPS: BuildStep[] = [
   },
   {
     id: 'step-6',
+    sequence: 6,
     stage: 'Publishing checks',
     detail: '4 rules evaluated · 2 need your input',
     type: 'policy',

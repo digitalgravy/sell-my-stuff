@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildStepFromSimpleEvent,
   buildStepsFromConditionRuns,
   buildStepsFromCorrections,
   buildStepsFromImports,
-  buildStepsFromResearchJobs,
   buildStepsFromRuns,
   deriveAttention,
   derivePhases,
@@ -86,6 +86,7 @@ void test('buildStepsFromConditionRuns maps a successful run to its own llm step
     [
       {
         id: 'condition-run-1',
+        sequence: 1,
         attempt: 1,
         provider: 'anthropic',
         model: 'claude-sonnet-5',
@@ -113,6 +114,7 @@ void test('buildStepsFromConditionRuns maps a failed run to an error block', () 
     [
       {
         id: 'condition-run-2',
+        sequence: 2,
         attempt: 1,
         provider: 'anthropic',
         model: 'claude-sonnet-5',
@@ -221,6 +223,7 @@ void test('buildStepsFromRuns maps a successful run to one llm step with the rea
     [
       {
         id: 'run-1',
+        sequence: 1,
         attempt: 1,
         provider: 'anthropic',
         model: 'claude-sonnet-5',
@@ -251,6 +254,7 @@ void test('buildStepsFromRuns maps a failed run to an error block, no assistant 
     [
       {
         id: 'run-2',
+        sequence: 2,
         attempt: 2,
         provider: 'anthropic',
         model: 'claude-sonnet-5',
@@ -293,6 +297,8 @@ void test('deriveAttention stops offering the Search eBay task once evidence has
 void test('buildStepsFromImports produces an undo endpoint targeting the capture import route', () => {
   const steps = buildStepsFromImports([
     {
+      id: 'event-1',
+      sequence: 1,
       captureId: 'capture-1',
       sourceUrl: 'https://www.ebay.co.uk/sch/i.html?_nkw=HomePod+mini',
       pageTitle: 'HomePod mini for sale',
@@ -304,29 +310,73 @@ void test('buildStepsFromImports produces an undo endpoint targeting the capture
   assert.match(steps[0]?.detail ?? '', /Imported 12 comparable sales/);
 });
 
-void test('buildStepsFromResearchJobs only reports terminal attempts, with the search link on success', () => {
-  const steps = buildStepsFromResearchJobs([
-    { id: 'job-1', state: 'SUCCEEDED', lastError: null, searchUrl: 'https://www.ebay.co.uk/sch' },
-    { id: 'job-2', state: 'QUEUED', lastError: null },
-    { id: 'job-3', state: 'FAILED', lastError: 'boom' },
+void test('buildStepsFromImports omits the undo control for an automated import with no capture to reopen', () => {
+  const steps = buildStepsFromImports([
+    {
+      id: 'event-2',
+      sequence: 2,
+      sourceUrl: null,
+      pageTitle: null,
+      importedCount: 4,
+      importedAt: '2026-09-06T00:00:00.000Z',
+    },
   ]);
-  assert.equal(steps.length, 2);
-  assert.equal(steps[0]?.outcome, 'succeeded');
-  assert.equal(steps[0]?.blocks[0]?.content, 'https://www.ebay.co.uk/sch');
-  assert.equal(steps[1]?.outcome, 'failed');
-  assert.equal(steps[1]?.blocks[0]?.content, 'boom');
+  assert.equal(steps[0]?.undo, undefined);
+  assert.match(steps[0]?.detail ?? '', /automated eBay research/);
 });
 
-void test('buildStepsFromCorrections shows the previous and new value and an undo endpoint', () => {
+void test('buildStepsFromCorrections shows the previous and new value and an undo endpoint targeting the correction id', () => {
   const steps = buildStepsFromCorrections([
     {
-      id: 'correction-1',
+      id: 'event-3',
+      sequence: 3,
+      correctionId: 'correction-1',
       field: 'identity.manufacturer',
       previousValue: '"Aple"',
       newValue: '"Apple"',
       correctedAt: '2026-09-06T00:00:00.000Z',
     },
   ]);
+  assert.equal(steps[0]?.id, 'event-3');
   assert.equal(steps[0]?.undo?.endpoint, 'facts/correct/correction-1');
   assert.equal(steps[0]?.blocks[0]?.content, '"Aple" → "Apple"');
+});
+
+void test('buildStepFromSimpleEvent renders a prepared eBay search link', () => {
+  const step = buildStepFromSimpleEvent({
+    id: 'event-4',
+    sequence: 4,
+    kind: 'ebay_search_prepared',
+    summary: 'Prepared an eBay search link',
+    detail: { url: 'https://www.ebay.co.uk/sch/i.html?_nkw=HomePod+mini' },
+  });
+  assert.equal(step.stage, 'Prepare eBay search');
+  assert.equal(step.outcome, 'succeeded');
+  assert.equal(step.blocks[0]?.content, 'https://www.ebay.co.uk/sch/i.html?_nkw=HomePod+mini');
+});
+
+void test('buildStepFromSimpleEvent renders a failed research attempt', () => {
+  const step = buildStepFromSimpleEvent({
+    id: 'event-5',
+    sequence: 5,
+    kind: 'research_failed',
+    summary: 'Comparable-sales research failed',
+    detail: { error: 'boom' },
+  });
+  assert.equal(step.outcome, 'failed');
+  assert.equal(step.blocks[0]?.label, 'Error');
+  assert.equal(step.blocks[0]?.content, 'boom');
+});
+
+void test('buildStepFromSimpleEvent renders a manual retry with no detail needed', () => {
+  const step = buildStepFromSimpleEvent({
+    id: 'event-6',
+    sequence: 6,
+    kind: 'identification_retried',
+    summary: 'Manually retried identification',
+    detail: null,
+  });
+  assert.equal(step.stage, 'Retry identification');
+  assert.equal(step.type, 'tool');
+  assert.equal(step.outcome, 'succeeded');
 });

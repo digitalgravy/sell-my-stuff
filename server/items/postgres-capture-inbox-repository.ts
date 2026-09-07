@@ -16,6 +16,7 @@ import type {
 } from './capture-inbox-repository';
 import { buildIdentityFactsForMatching, classifyComparableSales } from './comparable-match';
 import type { ComparableSale } from './item-detail-repository';
+import { deleteItemEventBySource, ITEM_EVENT_KIND, logItemEvent } from './item-events';
 import {
   completeMatchClassificationRun,
   startMatchClassificationRun,
@@ -145,6 +146,17 @@ export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
         .update(researchCaptures)
         .set({ importedAt: new Date(), importedIntoItemId: itemId })
         .where(eq(researchCaptures.id, captureId));
+      await logItemEvent(
+        {
+          itemId,
+          kind: ITEM_EVENT_KIND.COMPARABLE_SALES_IMPORTED,
+          sourceTable: 'research_captures',
+          sourceId: captureId,
+          summary: `Imported ${sales.length} comparable sale${sales.length === 1 ? '' : 's'} from a captured eBay page`,
+          detail: { count: sales.length, source: 'manual_capture' },
+        },
+        tx,
+      );
     });
 
     return { ok: true, imported: sales.length };
@@ -172,6 +184,9 @@ export class PostgresCaptureInboxRepository implements CaptureInboxRepository {
         .update(researchCaptures)
         .set({ importedAt: null, importedIntoItemId: null })
         .where(eq(researchCaptures.id, captureId));
+      // Matches fact_corrections' own undo behaviour: an undone action drops
+      // out of the Build log entirely rather than showing a stale "imported".
+      await deleteItemEventBySource('research_captures', captureId, tx);
     });
 
     return { ok: true };

@@ -193,6 +193,7 @@ export function deriveAttention(input: {
 
 export interface RunForBuildStep {
   id: string;
+  sequence: number;
   attempt: number;
   provider: string;
   model: string;
@@ -234,6 +235,7 @@ export function buildStepsFromRuns(
           : `Vision model turn · attempt ${run.attempt} · submitted, waiting for a response`;
     return {
       id: run.id,
+      sequence: run.sequence,
       stage: 'Identify item',
       detail,
       type: 'llm',
@@ -291,6 +293,7 @@ export function buildStepsFromConditionRuns(
           : `Vision model turn · attempt ${run.attempt} · submitted, waiting for a response`;
     return {
       id: run.id,
+      sequence: run.sequence,
       stage: 'Assess condition',
       detail,
       type: 'llm',
@@ -331,6 +334,7 @@ export function buildStepsFromConditionRuns(
 
 export interface MatchRunForBuildStep {
   id: string;
+  sequence: number;
   provider: string;
   model: string;
   listingCount: number;
@@ -358,6 +362,7 @@ export function buildStepsFromMatchRuns(runs: MatchRunForBuildStep[]): BuildStep
           : `Match classification · ${run.listingCount} listing${run.listingCount === 1 ? '' : 's'} · submitted, waiting for a response`;
     return {
       id: run.id,
+      sequence: run.sequence,
       stage: 'Check evidence matches',
       detail,
       type: 'llm',
@@ -392,7 +397,11 @@ export function buildStepsFromMatchRuns(runs: MatchRunForBuildStep[]): BuildStep
 }
 
 export interface ImportForBuildStep {
-  captureId: string;
+  /** The item_events row id -- this build step's identity/React key. */
+  id: string;
+  sequence: number;
+  /** The research_captures row id, present only for a manual capture import -- absent (no undo) for an automated browser-research import. */
+  captureId?: string;
   sourceUrl: string | null;
   pageTitle: string | null;
   importedCount: number;
@@ -401,31 +410,38 @@ export interface ImportForBuildStep {
 
 /**
  * One build step per comparable-sales import onto this item. Undoable
- * (the `undo` field), unlike identification runs -- importing is a single
- * reversible write (delete the rows it added, re-open the capture), while
- * a vision-model turn has nothing sensible to revert.
+ * (the `undo` field) only for a manual capture import -- importing is a
+ * single reversible write (delete the rows it added, re-open the capture),
+ * while an automated import has no capture row to reopen.
  */
 export function buildStepsFromImports(imports: ImportForBuildStep[]): BuildStep[] {
   return imports.map((imp) => ({
-    id: `import:${imp.captureId}`,
+    id: imp.id,
+    sequence: imp.sequence,
     stage: 'Import comparable sales',
-    detail: `Imported ${imp.importedCount} comparable sale${imp.importedCount === 1 ? '' : 's'} from a captured eBay page`,
+    detail: `Imported ${imp.importedCount} comparable sale${imp.importedCount === 1 ? '' : 's'} from ${imp.captureId ? 'a captured eBay page' : 'automated eBay research'}`,
     type: 'tool',
     outcome: 'succeeded',
     durationMs: 0,
-    blocks: [
-      {
-        label: imp.pageTitle ?? 'Captured eBay page',
-        meta: imp.sourceUrl ?? undefined,
-        content: imp.sourceUrl ?? 'No source URL was recorded for this capture.',
-      },
-    ],
-    undo: { endpoint: `research/captures/${imp.captureId}/import` },
+    blocks: imp.captureId
+      ? [
+          {
+            label: imp.pageTitle ?? 'Captured eBay page',
+            meta: imp.sourceUrl ?? undefined,
+            content: imp.sourceUrl ?? 'No source URL was recorded for this capture.',
+          },
+        ]
+      : [],
+    undo: imp.captureId ? { endpoint: `research/captures/${imp.captureId}/import` } : undefined,
   }));
 }
 
 export interface CorrectionForBuildStep {
+  /** The item_events row id -- this build step's identity/React key. */
   id: string;
+  sequence: number;
+  /** The fact_corrections row id -- the undo endpoint's target, distinct from `id` above. */
+  correctionId: string;
   field: string;
   previousValue: string | null;
   newValue: string;
@@ -439,7 +455,8 @@ export interface CorrectionForBuildStep {
  */
 export function buildStepsFromCorrections(corrections: CorrectionForBuildStep[]): BuildStep[] {
   return corrections.map((correction) => ({
-    id: `correction:${correction.id}`,
+    id: correction.id,
+    sequence: correction.sequence,
     stage: 'Correct a fact',
     detail: `Corrected ${correction.field}`,
     type: 'policy',
@@ -451,40 +468,58 @@ export function buildStepsFromCorrections(corrections: CorrectionForBuildStep[])
         content: `${correction.previousValue ?? '(no prior value)'} → ${correction.newValue}`,
       },
     ],
-    undo: { endpoint: `facts/correct/${correction.id}` },
+    undo: { endpoint: `facts/correct/${correction.correctionId}` },
   }));
 }
 
-export interface ResearchJobForBuildStep {
+/**
+ * Renders every item_events kind with no pending/resolved lifecycle and no
+ * detailed source table of its own -- a manual button click, a failed
+ * research attempt, a manual sale-exclude toggle. One event is always one
+ * build step here (nothing to join, nothing to dedupe at this layer).
+ */
+export interface SimpleEventForBuildStep {
   id: string;
-  state: string;
-  lastError: string | null;
-  searchUrl?: string;
+  sequence: number;
+  kind: string;
+  summary: string;
+  detail: unknown;
 }
 
-/**
- * One build step per terminal research_comparable_sales attempt -- QUEUED
- * and RUNNING are deliberately invisible here, matching identification
- * runs: a row only becomes a step once there's something to report.
- */
-export function buildStepsFromResearchJobs(jobsForStep: ResearchJobForBuildStep[]): BuildStep[] {
-  return jobsForStep
-    .filter((job) => job.state === 'SUCCEEDED' || job.state === 'FAILED')
-    .map((job) => ({
-      id: `research:${job.id}`,
-      stage: 'Prepare eBay search',
-      detail:
-        job.state === 'SUCCEEDED'
-          ? 'Built a pre-filtered eBay Sold + Completed search link from the identified facts'
-          : 'Could not build a search link',
-      type: 'compute',
-      outcome: job.state === 'SUCCEEDED' ? 'succeeded' : 'failed',
-      durationMs: 0,
-      blocks:
-        job.state === 'SUCCEEDED' && job.searchUrl
-          ? [{ label: 'eBay search', content: job.searchUrl }]
-          : [{ label: 'Error', content: job.lastError ?? 'Unknown error' }],
-    }));
+const SIMPLE_EVENT_STAGE: Record<string, { stage: string; type: BuildStep['type'] }> = {
+  ebay_search_prepared: { stage: 'Prepare eBay search', type: 'compute' },
+  research_failed: { stage: 'Prepare eBay search', type: 'compute' },
+  research_regenerated: { stage: 'Regenerate eBay search', type: 'tool' },
+  identification_retried: { stage: 'Retry identification', type: 'tool' },
+  sale_excluded_toggled: { stage: 'Adjust evidence', type: 'policy' },
+};
+
+export function buildStepFromSimpleEvent(event: SimpleEventForBuildStep): BuildStep {
+  const render = SIMPLE_EVENT_STAGE[event.kind] ?? { stage: event.kind, type: 'compute' as const };
+  const blocks: BuildStep['blocks'] = [];
+  if (event.kind === 'ebay_search_prepared') {
+    const url = (event.detail as { url?: string } | null)?.url;
+    if (url) blocks.push({ label: 'eBay search', content: url });
+  } else if (event.kind === 'research_failed') {
+    const error = (event.detail as { error?: string } | null)?.error;
+    blocks.push({ label: 'Error', content: error ?? 'Unknown error' });
+  } else if (event.kind === 'sale_excluded_toggled') {
+    const detail = event.detail as { excluded?: boolean; saleTitle?: string } | null;
+    blocks.push({
+      label: detail?.excluded ? 'Excluded' : 'Included',
+      content: detail?.saleTitle ?? 'A comparable sale was manually toggled.',
+    });
+  }
+  return {
+    id: event.id,
+    sequence: event.sequence,
+    stage: render.stage,
+    detail: event.summary,
+    type: render.type,
+    outcome: event.kind === 'research_failed' ? 'failed' : 'succeeded',
+    durationMs: 0,
+    blocks,
+  };
 }
 
 function countCandidates(response: unknown): number {

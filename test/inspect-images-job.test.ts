@@ -140,6 +140,8 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
   }
 
   async completeMatchClassificationRun() {}
+
+  async logItemEvent() {}
 }
 
 class MemoryObjectStore implements ObjectStore {

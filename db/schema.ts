@@ -1,4 +1,5 @@
 import {
+  bigserial,
   boolean,
   index,
   integer,
@@ -74,6 +75,48 @@ export const items = pgTable(
   },
   (table) => [
     index('items_status_created_idx').on(table.status, table.createdAt),
+  ],
+);
+
+/**
+ * The Build log's single source of truth -- one row per loggable action on
+ * an item (an AI call completing, a manual button click, a fact being
+ * corrected or confirmed, evidence changing), replacing what used to be six
+ * separate tables merged and sorted by timestamp at read time (no stable
+ * identity across reads). `sequence` is a global, monotonically increasing
+ * counter (assigned at insert time, never recomputed) -- filtered to one
+ * item and read in that order it's still a correct, stable, gap-tolerant
+ * per-item ordinal, so the Build log can finally number entries in a way
+ * that survives reloads and never renumbers existing ones.
+ *
+ * `kind` is plain text, not a pgEnum, matching `jobs.type` -- this list will
+ * keep growing across features and a pgEnum needs its own migration per new
+ * value. `sourceTable`/`sourceId` point back at the detailed row for kinds
+ * that already have one (an identification run, a fact correction, ...) so
+ * the Build log can still show full detail (system prompt, raw response)
+ * without duplicating it here; `detail` carries the whole payload for kinds
+ * with no separate table of their own (a manual regenerate click, a batch
+ * of confirmations).
+ */
+export const itemEvents = pgTable(
+  'item_events',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    sequence: bigserial('sequence', { mode: 'number' }).notNull(),
+    kind: text('kind').notNull(),
+    sourceTable: text('source_table'),
+    sourceId: uuid('source_id'),
+    summary: text('summary').notNull(),
+    detail: jsonb('detail'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('item_events_item_sequence_idx').on(table.itemId, table.sequence),
   ],
 );
 

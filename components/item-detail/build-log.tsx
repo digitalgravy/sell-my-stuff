@@ -31,11 +31,10 @@ export function BuildLog({
 
   return (
     <div className="space-y-3">
-      {steps.map((step, index) => (
+      {steps.map((step) => (
         <BuildStepEntry
           key={step.id}
           step={step}
-          index={index}
           readOnly={readOnly}
           undoing={undoingEndpoint === step.undo?.endpoint}
           onUndo={onUndo}
@@ -47,13 +46,11 @@ export function BuildLog({
 
 function BuildStepEntry({
   step,
-  index,
   readOnly,
   undoing,
   onUndo,
 }: {
   step: BuildStep;
-  index: number;
   readOnly?: boolean;
   undoing?: boolean;
   onUndo?: (endpoint: string) => void;
@@ -64,7 +61,7 @@ function BuildStepEntry({
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm">
         <span className="flex min-w-0 items-center gap-3">
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            {index + 1}
+            {step.sequence}
           </span>
           <Badge className={cn('border-transparent', badge.className)}>
             {badge.label}

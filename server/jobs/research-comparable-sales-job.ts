@@ -116,12 +116,28 @@ export async function runResearchComparableSalesJob(
         origin: 'web_research',
       },
     ]);
+    // Real content for what used to be an opaque "COMPUTE · succeeded" Build
+    // log entry -- the search link actually built, captured at the moment
+    // it was built (not re-derived from whatever the current fact value
+    // happens to be, which could have moved on after a later regenerate).
+    await dependencies.jobs.logItemEvent({
+      itemId: job.itemId,
+      kind: 'ebay_search_prepared',
+      summary: 'Prepared an eBay search link',
+      detail: { url },
+    });
     await dependencies.jobs.completeJob(job.id, 100);
     return { claimed: true, itemId: job.itemId, outcome: 'succeeded' };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     const outcome = job.attempt >= maxAttempts ? 'FAILED' : 'RETRY';
     await dependencies.jobs.failJob(job.id, message, outcome);
+    await dependencies.jobs.logItemEvent({
+      itemId: job.itemId,
+      kind: 'research_failed',
+      summary: 'Comparable-sales research failed',
+      detail: { error: message },
+    });
     return { claimed: true, itemId: job.itemId, outcome: 'failed' };
   }
 }

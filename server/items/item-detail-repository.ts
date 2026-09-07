@@ -27,6 +27,13 @@ export type BuildStepType = 'llm' | 'tool' | 'compute' | 'policy';
 
 export interface BuildStep {
   id: string;
+  /**
+   * A stable, monotonically increasing per-item ordinal from item_events
+   * (db/schema.ts) -- assigned once at creation and never recomputed, so an
+   * entry keeps the same number across reloads regardless of what else gets
+   * logged later. The newest entry has the highest number.
+   */
+  sequence: number;
   stage: string;
   detail: string;
   type: BuildStepType;

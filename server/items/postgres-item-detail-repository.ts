@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
 import {
   comparableSales,
   conditionAssessmentRuns,
   factCorrections,
   identificationRuns,
+  itemEvents,
   itemFacts,
   items,
   jobs,
@@ -22,8 +23,9 @@ import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from '@/server/jobs/research-compa
 
 import { buildIdentityFactsForMatching, classifyComparableSales } from './comparable-match';
 import { deriveActivityState } from './homepage-snapshot';
-import { computeValuation } from './valuation';
+import { deleteItemEventBySource, ITEM_EVENT_KIND, logItemEvent } from './item-events';
 import type {
+  BuildStep,
   ComparableSale,
   CorrectFactOutcome,
   EvidenceInfo,
@@ -36,11 +38,11 @@ import type {
   UndoCorrectionOutcome,
 } from './item-detail-repository';
 import {
+  buildStepFromSimpleEvent,
   buildStepsFromConditionRuns,
   buildStepsFromCorrections,
   buildStepsFromImports,
   buildStepsFromMatchRuns,
-  buildStepsFromResearchJobs,
   buildStepsFromRuns,
   deriveAttention,
   derivePhases,
@@ -49,6 +51,7 @@ import {
   completeMatchClassificationRun,
   startMatchClassificationRun,
 } from './match-classification-runs';
+import { computeValuation } from './valuation';
 
 const IDENTITY_FACT_FIELDS = new Set([
   'identity.item_type',
@@ -85,14 +88,13 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     const [
       photoRows,
       factRows,
+      eventRows,
       runRows,
       conditionRunRows,
       matchRunRows,
       [job],
       comparableSaleRows,
-      importRows,
-      researchJobRows,
-      correctionRows,
+      captureRows,
     ] = await Promise.all([
       database
         .select({ id: photos.id, position: photos.position })
@@ -111,6 +113,20 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .from(itemFacts)
         .where(eq(itemFacts.itemId, itemId))
         .orderBy(asc(itemFacts.field)),
+      database
+        .select({
+          id: itemEvents.id,
+          sequence: itemEvents.sequence,
+          kind: itemEvents.kind,
+          sourceTable: itemEvents.sourceTable,
+          sourceId: itemEvents.sourceId,
+          summary: itemEvents.summary,
+          detail: itemEvents.detail,
+          createdAt: itemEvents.createdAt,
+        })
+        .from(itemEvents)
+        .where(eq(itemEvents.itemId, itemId))
+        .orderBy(desc(itemEvents.sequence)),
       database
         .select({
           id: identificationRuns.id,
@@ -185,33 +201,9 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
           id: researchCaptures.id,
           sourceUrl: researchCaptures.sourceUrl,
           pageTitle: researchCaptures.pageTitle,
-          extractedSales: researchCaptures.extractedSales,
-          importedAt: researchCaptures.importedAt,
         })
         .from(researchCaptures)
-        .where(eq(researchCaptures.importedIntoItemId, itemId))
-        .orderBy(desc(researchCaptures.importedAt)),
-      database
-        .select({
-          id: jobs.id,
-          state: jobs.state,
-          lastError: jobs.lastError,
-          updatedAt: jobs.updatedAt,
-        })
-        .from(jobs)
-        .where(and(eq(jobs.itemId, itemId), eq(jobs.type, RESEARCH_COMPARABLE_SALES_JOB_TYPE)))
-        .orderBy(desc(jobs.updatedAt)),
-      database
-        .select({
-          id: factCorrections.id,
-          field: factCorrections.field,
-          previousValue: factCorrections.previousValue,
-          newValue: factCorrections.newValue,
-          correctedAt: factCorrections.correctedAt,
-        })
-        .from(factCorrections)
-        .where(and(eq(factCorrections.itemId, itemId), isNull(factCorrections.revertedAt)))
-        .orderBy(desc(factCorrections.correctedAt)),
+        .where(eq(researchCaptures.importedIntoItemId, itemId)),
     ]);
 
     const comparableSaleList: ComparableSale[] = comparableSaleRows.map((row) => ({
@@ -251,110 +243,127 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       position: row.position,
     }));
 
-    // Five independent sources of build-log entries (identification runs,
-    // match-classification runs, comparable-sales imports, eBay-search-link
-    // jobs, fact corrections) merged into one chronological list -- each
-    // timestamped record keeps the source it came from so the right
-    // builder function turns it into a BuildStep. A pending run (no
-    // completedAt yet) sorts by its startedAt like everything else, so it
-    // naturally appears at the top while in flight.
-    const timestampedSteps = [
-      ...runRows.map((row) => ({ at: row.startedAt, kind: 'run' as const, row })),
-      ...conditionRunRows.map((row) => ({ at: row.startedAt, kind: 'conditionRun' as const, row })),
-      ...matchRunRows.map((row) => ({ at: row.startedAt, kind: 'matchRun' as const, row })),
-      ...importRows.map((row) => ({ at: row.importedAt!, kind: 'import' as const, row })),
-      ...researchJobRows
-        .filter((row) => row.state === 'SUCCEEDED' || row.state === 'FAILED')
-        .map((row) => ({ at: row.updatedAt, kind: 'research' as const, row })),
-      ...correctionRows.map((row) => ({ at: row.correctedAt, kind: 'correction' as const, row })),
-    ].sort((a, b) => b.at.getTime() - a.at.getTime());
+    // item_events is now the single source of the Build log (see its doc
+    // comment in db/schema.ts) -- one query, already in the right order
+    // (newest first, by the stable `sequence` assigned at creation).
+    // Renderers that need full detail (system prompt, raw response) join
+    // back into the specialized run tables by sourceId; everything else
+    // renders straight from the event's own summary/detail.
+    const identificationRunById = new Map(runRows.map((row) => [row.id, row]));
+    const conditionRunById = new Map(conditionRunRows.map((row) => [row.id, row]));
+    const matchRunById = new Map(matchRunRows.map((row) => [row.id, row]));
+    const captureById = new Map(captureRows.map((row) => [row.id, row]));
 
-    const buildSteps = timestampedSteps.flatMap((entry) => {
-      switch (entry.kind) {
-        case 'run':
+    const buildSteps = eventRows.flatMap((event): BuildStep[] => {
+      switch (event.kind) {
+        case ITEM_EVENT_KIND.IDENTIFICATION_RUN: {
+          const run = event.sourceId ? identificationRunById.get(event.sourceId) : undefined;
+          if (!run) return [];
           return buildStepsFromRuns(
             [
               {
-                id: entry.row.id,
-                attempt: entry.row.attempt,
-                provider: entry.row.provider,
-                model: entry.row.model,
-                outcome: entry.row.outcome ?? undefined,
-                inputTokens: entry.row.inputTokens ?? undefined,
-                outputTokens: entry.row.outputTokens ?? undefined,
-                response: entry.row.response ?? undefined,
-                errorMessage: entry.row.errorMessage ?? undefined,
-                startedAt: entry.row.startedAt.toISOString(),
-                completedAt: entry.row.completedAt?.toISOString(),
+                id: event.id,
+                sequence: event.sequence,
+                attempt: run.attempt,
+                provider: run.provider,
+                model: run.model,
+                outcome: run.outcome ?? undefined,
+                inputTokens: run.inputTokens ?? undefined,
+                outputTokens: run.outputTokens ?? undefined,
+                response: run.response ?? undefined,
+                errorMessage: run.errorMessage ?? undefined,
+                startedAt: run.startedAt.toISOString(),
+                completedAt: run.completedAt?.toISOString(),
               },
             ],
             photoRows.length,
           );
-        case 'conditionRun':
+        }
+        case ITEM_EVENT_KIND.CONDITION_RUN: {
+          const run = event.sourceId ? conditionRunById.get(event.sourceId) : undefined;
+          if (!run) return [];
           return buildStepsFromConditionRuns(
             [
               {
-                id: entry.row.id,
-                attempt: entry.row.attempt,
-                provider: entry.row.provider,
-                model: entry.row.model,
-                outcome: entry.row.outcome ?? undefined,
-                inputTokens: entry.row.inputTokens ?? undefined,
-                outputTokens: entry.row.outputTokens ?? undefined,
-                response: entry.row.response ?? undefined,
-                errorMessage: entry.row.errorMessage ?? undefined,
-                startedAt: entry.row.startedAt.toISOString(),
-                completedAt: entry.row.completedAt?.toISOString(),
+                id: event.id,
+                sequence: event.sequence,
+                attempt: run.attempt,
+                provider: run.provider,
+                model: run.model,
+                outcome: run.outcome ?? undefined,
+                inputTokens: run.inputTokens ?? undefined,
+                outputTokens: run.outputTokens ?? undefined,
+                response: run.response ?? undefined,
+                errorMessage: run.errorMessage ?? undefined,
+                startedAt: run.startedAt.toISOString(),
+                completedAt: run.completedAt?.toISOString(),
               },
             ],
             photoRows.length,
           );
-        case 'matchRun':
+        }
+        case ITEM_EVENT_KIND.MATCH_RUN: {
+          const run = event.sourceId ? matchRunById.get(event.sourceId) : undefined;
+          if (!run) return [];
           return buildStepsFromMatchRuns([
             {
-              id: entry.row.id,
-              provider: entry.row.provider,
-              model: entry.row.model,
-              listingCount: entry.row.listingCount,
-              outcome: entry.row.outcome ?? undefined,
-              inputTokens: entry.row.inputTokens ?? undefined,
-              outputTokens: entry.row.outputTokens ?? undefined,
-              errorMessage: entry.row.errorMessage ?? undefined,
-              startedAt: entry.row.startedAt.toISOString(),
-              completedAt: entry.row.completedAt?.toISOString(),
+              id: event.id,
+              sequence: event.sequence,
+              provider: run.provider,
+              model: run.model,
+              listingCount: run.listingCount,
+              outcome: run.outcome ?? undefined,
+              inputTokens: run.inputTokens ?? undefined,
+              outputTokens: run.outputTokens ?? undefined,
+              errorMessage: run.errorMessage ?? undefined,
+              startedAt: run.startedAt.toISOString(),
+              completedAt: run.completedAt?.toISOString(),
             },
           ]);
-        case 'import':
+        }
+        case ITEM_EVENT_KIND.COMPARABLE_SALES_IMPORTED: {
+          const detail = event.detail as { count?: number } | null;
+          const capture =
+            event.sourceTable === 'research_captures' && event.sourceId
+              ? captureById.get(event.sourceId)
+              : undefined;
           return buildStepsFromImports([
             {
-              captureId: entry.row.id,
-              sourceUrl: entry.row.sourceUrl,
-              pageTitle: entry.row.pageTitle,
-              importedCount: Array.isArray(entry.row.extractedSales)
-                ? entry.row.extractedSales.length
-                : 0,
-              importedAt: entry.row.importedAt!.toISOString(),
+              id: event.id,
+              sequence: event.sequence,
+              captureId: event.sourceTable === 'research_captures' ? (event.sourceId ?? undefined) : undefined,
+              sourceUrl: capture?.sourceUrl ?? null,
+              pageTitle: capture?.pageTitle ?? null,
+              importedCount: detail?.count ?? 0,
+              importedAt: event.createdAt.toISOString(),
             },
           ]);
-        case 'research':
-          return buildStepsFromResearchJobs([
-            {
-              id: entry.row.id,
-              state: entry.row.state,
-              lastError: entry.row.lastError,
-              searchUrl: ebaySearchUrl,
-            },
-          ]);
-        case 'correction':
+        }
+        case ITEM_EVENT_KIND.FACT_CORRECTED: {
+          const detail = event.detail as { field?: string; previousValue?: string | null; newValue?: string } | null;
+          if (!detail?.field || detail.newValue === undefined) return [];
           return buildStepsFromCorrections([
             {
-              id: entry.row.id,
-              field: entry.row.field,
-              previousValue: entry.row.previousValue,
-              newValue: entry.row.newValue,
-              correctedAt: entry.row.correctedAt.toISOString(),
+              id: event.id,
+              sequence: event.sequence,
+              correctionId: event.sourceId ?? event.id,
+              field: detail.field,
+              previousValue: detail.previousValue ?? null,
+              newValue: detail.newValue,
+              correctedAt: event.createdAt.toISOString(),
             },
           ]);
+        }
+        default:
+          return [
+            buildStepFromSimpleEvent({
+              id: event.id,
+              sequence: event.sequence,
+              kind: event.kind,
+              summary: event.summary,
+              detail: event.detail,
+            }),
+          ];
       }
     });
 
@@ -443,6 +452,14 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .update(items)
         .set({ status: 'INBOX', revision: newRevision, updatedAt: new Date() })
         .where(eq(items.id, itemId));
+      await logItemEvent(
+        {
+          itemId,
+          kind: ITEM_EVENT_KIND.IDENTIFICATION_RETRIED,
+          summary: 'Manually retried identification',
+        },
+        tx,
+      );
 
       return { ok: true };
     });
@@ -462,6 +479,11 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       type: RESEARCH_COMPARABLE_SALES_JOB_TYPE,
       idempotencyKey: `${RESEARCH_COMPARABLE_SALES_JOB_TYPE}:${itemId}:${randomUUID()}`,
     });
+    await logItemEvent({
+      itemId,
+      kind: ITEM_EVENT_KIND.RESEARCH_REGENERATED,
+      summary: 'Manually regenerated eBay search research',
+    });
 
     return { ok: true };
   }
@@ -476,8 +498,14 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       .update(comparableSales)
       .set({ excluded, excludedReason: null })
       .where(and(eq(comparableSales.id, saleId), eq(comparableSales.itemId, itemId)))
-      .returning({ id: comparableSales.id });
+      .returning({ id: comparableSales.id, title: comparableSales.title });
     if (result.length === 0) return { ok: false, reason: 'Comparable sale not found' };
+    await logItemEvent({
+      itemId,
+      kind: ITEM_EVENT_KIND.SALE_EXCLUDED_TOGGLED,
+      summary: `Manually marked "${result[0]!.title}" as ${excluded ? 'excluded from' : 'included in'} pricing`,
+      detail: { saleId, excluded, saleTitle: result[0]!.title },
+    });
     return { ok: true };
   }
 
@@ -565,14 +593,29 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .from(itemFacts)
         .where(and(eq(itemFacts.itemId, itemId), eq(itemFacts.field, field)));
 
+      const correctionId = randomUUID();
       await tx.insert(factCorrections).values({
-        id: randomUUID(),
+        id: correctionId,
         itemId,
         field,
         previousValue: existing?.value ?? null,
         previousOrigin: existing?.origin,
         newValue,
       });
+      await logItemEvent(
+        {
+          itemId,
+          kind: ITEM_EVENT_KIND.FACT_CORRECTED,
+          sourceTable: 'fact_corrections',
+          sourceId: correctionId,
+          summary: `Corrected ${field}`,
+          // Raw JSON-encoded strings, matching fact_corrections' own
+          // previousValue/newValue columns -- see
+          // buildStepsFromCorrections' existing display convention.
+          detail: { field, previousValue: existing?.value ?? null, newValue },
+        },
+        tx,
+      );
 
       await tx
         .insert(itemFacts)
@@ -633,6 +676,9 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .update(factCorrections)
         .set({ revertedAt: new Date() })
         .where(eq(factCorrections.id, correctionId));
+      // Matches the capture-import undo behaviour: an undone action drops
+      // out of the Build log entirely rather than showing a stale entry.
+      await deleteItemEventBySource('fact_corrections', correctionId, tx);
     });
 
     return { ok: true };

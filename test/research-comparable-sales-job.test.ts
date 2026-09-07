@@ -9,6 +9,7 @@ import type {
   ClaimedJob,
   ComparableSaleInput,
   IdentificationFactInput,
+  JobEventInput,
   MatchClassificationRunCompleteInput,
   MatchClassificationRunStartInput,
   ResearchJobRepository,
@@ -33,6 +34,7 @@ class MemoryJobRepository implements ResearchJobRepository {
   completed: { jobId: string; progress: number }[] = [];
   failed: { jobId: string; error: string }[] = [];
   enqueued: { itemId: string; type: string; idempotencyKey: string }[] = [];
+  loggedEvents: JobEventInput[] = [];
   private pendingMatchRuns = new Map<string, MatchClassificationRunStartInput>();
   private nextMatchRunId = 1;
 
@@ -100,6 +102,10 @@ class MemoryJobRepository implements ResearchJobRepository {
     const start = this.pendingMatchRuns.get(entry.runId);
     this.pendingMatchRuns.delete(entry.runId);
     this.matchRunLogs.push({ ...(start as MatchClassificationRunStartInput), ...entry });
+  }
+
+  async logItemEvent(entry: JobEventInput) {
+    this.loggedEvents.push(entry);
   }
 }
 
@@ -186,12 +192,32 @@ void test('runResearchComparableSalesJob saves a search-url fact and completes t
   assert.ok(urlFact);
   assert.equal(urlFact?.origin, 'web_research');
   assert.match(JSON.parse(urlFact!.value), /^https:\/\/www\.ebay\.co\.uk\/sch\/i\.html\?/);
+
+  const preparedEvent = jobs.loggedEvents.find((e) => e.kind === 'ebay_search_prepared');
+  assert.ok(preparedEvent, 'the actual built URL should be logged, not just that a COMPUTE step ran');
+  assert.equal((preparedEvent?.detail as { url?: string } | undefined)?.url, JSON.parse(urlFact!.value));
 });
 
 void test('runResearchComparableSalesJob returns claimed:false when nothing is queued', async () => {
   const jobs = new MemoryJobRepository();
   const result = await runResearchComparableSalesJob({ jobs });
   assert.deepEqual(result, { claimed: false });
+});
+
+void test('runResearchComparableSalesJob logs a research_failed event when the job throws', async () => {
+  const jobs = new MemoryJobRepository();
+  jobs.queue.push({ id: 'job-fail', itemId: 'item-fail', type: 'research_comparable_sales', attempt: 0 });
+  jobs.getIdentityFacts = () => {
+    throw new Error('identity lookup exploded');
+  };
+
+  const result = await runResearchComparableSalesJob({ jobs });
+
+  assert.deepEqual(result, { claimed: true, itemId: 'item-fail', outcome: 'failed' });
+  assert.equal(jobs.failed.length, 1);
+  const failedEvent = jobs.loggedEvents.find((e) => e.kind === 'research_failed');
+  assert.ok(failedEvent);
+  assert.equal((failedEvent?.detail as { error?: string } | undefined)?.error, 'identity lookup exploded');
 });
 
 void test('runResearchComparableSalesJob imports sales the browser provider finds, classified before saving', async () => {

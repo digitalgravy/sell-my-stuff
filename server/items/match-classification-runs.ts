@@ -5,6 +5,8 @@ import { eq } from 'drizzle-orm';
 import { matchClassificationRuns } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 
+import { ITEM_EVENT_KIND, logItemEvent } from './item-events';
+
 export interface MatchClassificationRunStartInput {
   itemId: string;
   provider: string;
@@ -21,7 +23,15 @@ export interface MatchClassificationRunCompleteInput {
   errorMessage?: string;
 }
 
-/** Logged before the request goes to Anthropic, so the Build log can show a pending entry -- see identificationRuns for the same pattern. */
+/**
+ * Logged before the request goes to Anthropic, so the Build log can show a
+ * pending entry -- see identificationRuns for the same pattern. The one
+ * choke point for every match-classification call (auto-import,
+ * `research-comparable-sales-job.ts`; manual capture import,
+ * `postgres-capture-inbox-repository.ts`; a manual re-check,
+ * `reclassifyEvidence`) -- logging the item_events row here covers all
+ * three without each call site needing to know about it.
+ */
 export async function startMatchClassificationRun(
   input: MatchClassificationRunStartInput,
 ): Promise<{ runId: string }> {
@@ -34,6 +44,13 @@ export async function startMatchClassificationRun(
     model: input.model,
     listingCount: input.listingCount,
     startedAt: new Date(),
+  });
+  await logItemEvent({
+    itemId: input.itemId,
+    kind: ITEM_EVENT_KIND.MATCH_RUN,
+    sourceTable: 'match_classification_runs',
+    sourceId: id,
+    summary: `Match classification · ${input.listingCount} listing${input.listingCount === 1 ? '' : 's'}`,
   });
   return { runId: id };
 }

@@ -89,6 +89,20 @@ export interface MatchClassificationRunCompleteInput {
   errorMessage?: string;
 }
 
+/**
+ * A Build log entry a job wants to record explicitly -- for actions with no
+ * existing dedicated run table to hang off (an imported search link, a
+ * failed research attempt). `kind` is a plain string, matching item_events
+ * itself (see db/schema.ts) rather than importing the full ItemEventKind
+ * union here, so this file stays free of any DB/server-module dependency.
+ */
+export interface JobEventInput {
+  itemId: string;
+  kind: string;
+  summary: string;
+  detail?: unknown;
+}
+
 export interface ComparableSaleInput {
   title: string;
   match: string;
@@ -153,4 +167,6 @@ export interface ResearchJobRepository {
     entry: MatchClassificationRunStartInput,
   ): Promise<{ runId: string }>;
   completeMatchClassificationRun(entry: MatchClassificationRunCompleteInput): Promise<void>;
+  /** Records a Build log entry for an action with no dedicated run table of its own -- see JobEventInput. */
+  logItemEvent(entry: JobEventInput): Promise<void>;
 }

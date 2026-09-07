@@ -5,6 +5,8 @@ import { eq } from 'drizzle-orm';
 import { conditionAssessmentRuns } from '@/db/schema';
 import { getDatabase } from '@/server/db/client';
 
+import { ITEM_EVENT_KIND, logItemEvent } from './item-events';
+
 export interface ConditionAssessmentRunStartInput {
   itemId: string;
   jobId: string;
@@ -38,6 +40,13 @@ export async function startConditionAssessmentRun(
     provider: input.provider,
     model: input.model,
     startedAt: input.startedAt,
+  });
+  await logItemEvent({
+    itemId: input.itemId,
+    kind: ITEM_EVENT_KIND.CONDITION_RUN,
+    sourceTable: 'condition_assessment_runs',
+    sourceId: id,
+    summary: 'Condition assessment',
   });
   return { runId: id };
 }
