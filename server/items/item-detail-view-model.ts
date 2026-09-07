@@ -76,15 +76,31 @@ export function deriveAttention(input: {
   ebaySearchUrl?: string;
   hasEvidence: boolean;
 }): AttentionTask[] {
-  if (input.status === 'RESEARCHING' && input.ebaySearchUrl && !input.hasEvidence) {
+  if (input.status === 'RESEARCHING' && !input.hasEvidence) {
+    if (input.ebaySearchUrl) {
+      return [
+        {
+          id: 'research-ebay',
+          title: 'Find comparable sold listings on eBay',
+          note: 'There is no automated eBay search -- eBay blocks automated browsers, so this opens a pre-filtered Sold + Completed search for you to capture with the bookmarklet.',
+          impact: 'Why it matters: pricing needs real comparable sales before a listing can be drafted.',
+          ctaLabel: 'Search eBay',
+          href: input.ebaySearchUrl,
+          required: true,
+        },
+      ];
+    }
+    // No search link has ever been generated for this item -- either the
+    // research job hasn't been picked up yet, or (real case: items
+    // identified before this job type existed) it was never queued at
+    // all. Same fix either way: (re)run it.
     return [
       {
-        id: 'research-ebay',
-        title: 'Find comparable sold listings on eBay',
-        note: 'There is no automated eBay search -- eBay blocks automated browsers, so this opens a pre-filtered Sold + Completed search for you to capture with the bookmarklet.',
+        id: 'research-not-started',
+        title: 'Comparable-sales research has not run yet',
+        note: 'Once run, this prepares a pre-filtered eBay search link for you to capture yourself -- eBay blocks automated browsers, so there is no way to skip that step.',
         impact: 'Why it matters: pricing needs real comparable sales before a listing can be drafted.',
-        ctaLabel: 'Search eBay',
-        href: input.ebaySearchUrl,
+        ctaLabel: 'Prepare eBay search',
         required: true,
       },
     ];

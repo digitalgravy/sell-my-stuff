@@ -94,9 +94,19 @@ void test('deriveAttention returns one required task for a FAILED item', () => {
 
 void test('deriveAttention returns nothing for a status with no attention needed', () => {
   assert.deepEqual(
-    deriveAttention({ status: 'RESEARCHING', openQuestions: [], hasEvidence: false }),
+    deriveAttention({ status: 'IDENTIFYING', openQuestions: [], hasEvidence: false }),
     [],
   );
+});
+
+void test('deriveAttention offers to prepare an eBay search when RESEARCHING but no link has ever been generated', () => {
+  // Real case: an item identified before the research_comparable_sales job
+  // type existed sits at RESEARCHING forever with no ebaySearchUrl fact --
+  // must not silently show "nothing needs attention".
+  const tasks = deriveAttention({ status: 'RESEARCHING', openQuestions: [], hasEvidence: false });
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0]?.ctaLabel, 'Prepare eBay search');
+  assert.equal(tasks[0]?.href, undefined);
 });
 
 void test('buildStepsFromRuns maps a successful run to one llm step with the real system prompt', () => {

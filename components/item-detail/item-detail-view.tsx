@@ -275,9 +275,13 @@ export function ItemDetailView({
       }
       if (task.ctaLabel === 'Search eBay' && task.href) {
         window.open(task.href, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      if (task.ctaLabel === 'Prepare eBay search') {
+        regenerateResearch();
       }
     },
-    [openCorrection, retry],
+    [openCorrection, retry, regenerateResearch],
   );
 
   return (
@@ -587,13 +591,27 @@ function DecisionCard({
   onJumpToTab: (tab: string) => void;
 }) {
   if (!detail.pricing) {
+    // pricing is undefined only when there's no usable evidence -- if
+    // `evidence` exists at all in that case, every comparable sale on the
+    // item must be excluded (computeValuation filters those out and only
+    // returns undefined when nothing usable remains). Say which one is
+    // actually true rather than a blanket "not built yet".
+    const allExcluded = Boolean(detail.evidence);
     return (
       <div className="flex flex-col justify-center rounded-[1.75rem] border border-dashed border-border/75 bg-muted/30 p-6 text-sm text-muted-foreground">
-        <p className="font-medium text-foreground">Pricing not built yet</p>
+        <p className="font-medium text-foreground">No price yet</p>
         <p className="mt-2">
-          No research or valuation stage runs automatically today — this will show a
-          suggested price once that exists.
+          {allExcluded
+            ? 'Every comparable sale on this item is currently excluded — include at least one to get a price.'
+            : 'No comparable sales have been imported yet — this will show a real suggested price the moment some are.'}
         </p>
+        <Button
+          variant="outline"
+          className="mt-4 self-start"
+          onClick={() => onJumpToTab('evidence')}
+        >
+          Go to Evidence
+        </Button>
       </div>
     );
   }
@@ -878,6 +896,7 @@ function AttentionGroup({
   const actionable = (task: AttentionTask) =>
     (task.ctaLabel === 'Correct' && task.field !== undefined) ||
     task.ctaLabel === 'Retry' ||
+    task.ctaLabel === 'Prepare eBay search' ||
     (task.ctaLabel === 'Search eBay' && task.href !== undefined);
 
   return (
@@ -1047,7 +1066,7 @@ function EvidenceTab({
     return (
       <div className="space-y-5">
         <section className="rounded-[1.75rem] border border-dashed border-border/75 bg-muted/30 p-6 text-sm text-muted-foreground sm:p-8">
-          <p className="font-medium text-foreground">Comparable-sales research not built yet</p>
+          <p className="font-medium text-foreground">No comparable sales imported yet</p>
           <p className="mt-2">
             Import a captured eBay search page below, or use the{' '}
             <Link href="/tools/capture" className="underline underline-offset-2">
