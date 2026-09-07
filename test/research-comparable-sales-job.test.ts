@@ -119,6 +119,24 @@ class StubBrowserProvider implements ComparableSalesBrowserProvider {
   }
 }
 
+/** Returns a different result per exact keyword string -- for testing the multi-search-term cascade. */
+class KeywordAwareBrowserProvider implements ComparableSalesBrowserProvider {
+  received: string[] = [];
+  constructor(private readonly resultByKeywords: Map<string, ComparableSalesBrowserResult>) {}
+
+  async fetchSoldListings(keywords: string) {
+    this.received.push(keywords);
+    return (
+      this.resultByKeywords.get(keywords) ?? {
+        outcome: 'succeeded' as const,
+        query: keywords,
+        url: 'https://example.com',
+        sales: [],
+      }
+    );
+  }
+}
+
 class StubMatchProvider implements ComparableMatchProvider {
   readonly provider = 'stub';
   readonly model = 'stub-model';
@@ -164,6 +182,20 @@ void test('buildEbaySearchUrl drops a family term wholly contained in the model 
     fact('identity.model', 'HomePod mini'),
   ]);
   assert.equal(new URL(url).searchParams.get('_nkw'), 'Apple HomePod mini');
+});
+
+void test('buildEbaySearchUrl strips marketing/series text in parentheses from the family term', () => {
+  // Real case caught live: family "MEG (Unify series)" + model
+  // "MEG B550 UNIFY-X" produced "MSI MEG (Unify series) MEG B550
+  // UNIFY-X", which found nothing on eBay -- "MSI MEG B550 UNIFY-X" did.
+  // Stripping the parenthetical first lets the existing containment-dedupe
+  // (family "MEG" is now wholly contained in the model) drop it entirely.
+  const url = buildEbaySearchUrl([
+    fact('identity.manufacturer', 'MSI'),
+    fact('identity.family', 'MEG (Unify series)'),
+    fact('identity.model', 'MEG B550 UNIFY-X'),
+  ]);
+  assert.equal(new URL(url).searchParams.get('_nkw'), 'MSI MEG B550 UNIFY-X');
 });
 
 void test('buildEbaySearchUrl falls back to item type when nothing more specific is known', () => {
@@ -333,4 +365,85 @@ void test('runResearchComparableSalesJob does not try a second provider once the
   assert.equal(macProvider.received.length, 1);
   assert.equal(dockerProvider.received.length, 0);
   assert.equal(jobs.savedComparableSales.length, 0);
+});
+
+void test('runResearchComparableSalesJob tries the identification\'s own search terms in order until one finds sales', async () => {
+  // Real bug caught live: "MSI MEG (Unify series) MEG B550 UNIFY-X" (the
+  // old manufacturer+family+model concatenation) found nothing, but "MSI
+  // MEG B550 UNIFY-X" did -- the identification's own ebaySearchTerms
+  // should be tried in order instead of building one query in code.
+  const jobs = new MemoryJobRepository();
+  jobs.queue.push({ id: 'job-7', itemId: 'item-7', type: 'research_comparable_sales', attempt: 0 });
+  jobs.identityFactsByItem.set('item-7', [
+    {
+      field: 'identity.ebay_search_terms',
+      value: JSON.stringify(['MSI MEG (Unify series) MEG B550 UNIFY-X', 'MSI MEG B550 UNIFY-X']),
+    },
+  ]);
+  const provider = new KeywordAwareBrowserProvider(
+    new Map([
+      [
+        'MSI MEG (Unify series) MEG B550 UNIFY-X',
+        { outcome: 'succeeded' as const, query: 'MSI MEG (Unify series) MEG B550 UNIFY-X', url: 'https://example.com/1', sales: [] },
+      ],
+      [
+        'MSI MEG B550 UNIFY-X',
+        {
+          outcome: 'succeeded' as const,
+          query: 'MSI MEG B550 UNIFY-X',
+          url: 'https://example.com/2',
+          sales: [{ title: 'MSI MEG B550 UNIFY-X motherboard', match: 'Used', soldAt: '2026-09-01', price: 180 }],
+        },
+      ],
+    ]),
+  );
+
+  await runResearchComparableSalesJob({ jobs, browserProviders: [provider] });
+
+  assert.deepEqual(provider.received, [
+    'MSI MEG (Unify series) MEG B550 UNIFY-X',
+    'MSI MEG B550 UNIFY-X',
+  ]);
+  assert.equal(jobs.savedComparableSales.length, 1);
+});
+
+void test('runResearchComparableSalesJob falls back to buildSearchKeywords when no ebaySearchTerms fact exists', async () => {
+  const jobs = new MemoryJobRepository();
+  jobs.queue.push({ id: 'job-8', itemId: 'item-8', type: 'research_comparable_sales', attempt: 0 });
+  jobs.identityFactsByItem.set('item-8', [fact('identity.manufacturer', 'Apple'), fact('identity.model', 'HomePod mini')]);
+  const provider = new KeywordAwareBrowserProvider(new Map());
+
+  await runResearchComparableSalesJob({ jobs, browserProviders: [provider] });
+
+  assert.deepEqual(provider.received, ['Apple HomePod mini']);
+});
+
+void test('runResearchComparableSalesJob uses the most specific search term for the manual fallback link when nothing is found', async () => {
+  const jobs = new MemoryJobRepository();
+  jobs.queue.push({ id: 'job-9', itemId: 'item-9', type: 'research_comparable_sales', attempt: 0 });
+  jobs.identityFactsByItem.set('item-9', [
+    { field: 'identity.ebay_search_terms', value: JSON.stringify(['most specific term', 'broader term']) },
+  ]);
+  const provider = new KeywordAwareBrowserProvider(new Map());
+
+  await runResearchComparableSalesJob({ jobs, browserProviders: [provider] });
+
+  const urlFact = jobs.savedFacts.find((f) => f.field === 'research.ebay_search_url');
+  assert.match(JSON.parse(urlFact!.value), /_nkw=most\+specific\+term/);
+});
+
+void test('runResearchComparableSalesJob stops trying more search terms once a provider is genuinely unavailable', async () => {
+  const jobs = new MemoryJobRepository();
+  jobs.queue.push({ id: 'job-10', itemId: 'item-10', type: 'research_comparable_sales', attempt: 0 });
+  jobs.identityFactsByItem.set('item-10', [
+    { field: 'identity.ebay_search_terms', value: JSON.stringify(['term one', 'term two']) },
+  ]);
+  const provider = new StubBrowserProvider({ outcome: 'unavailable', reason: 'Not signed in to eBay' });
+
+  await runResearchComparableSalesJob({ jobs, browserProviders: [provider] });
+
+  // Only the first term was ever tried -- a second term wouldn't fix a
+  // provider that's genuinely unreachable, and there's no reason to hit
+  // eBay again for the same item in the same run.
+  assert.deepEqual(provider.received, ['term one']);
 });

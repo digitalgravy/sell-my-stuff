@@ -82,32 +82,49 @@ export async function runResearchComparableSalesJob(
 
   try {
     const facts = await dependencies.jobs.getIdentityFacts(job.itemId);
-    const keywords = buildSearchKeywords(facts);
+    // The LLM's own candidate queries (most specific first) when this item
+    // was identified after ebaySearchTerms shipped, falling back to the
+    // one deterministic manufacturer+family+model string for items
+    // identified before it existed.
+    const searchTermCandidates = getSearchTermCandidates(facts);
 
-    for (const provider of dependencies.browserProviders ?? []) {
-      const result = await provider.fetchSoldListings(keywords);
-      if (result.outcome === 'succeeded') {
-        if (result.sales.length > 0) {
-          console.log(
-            `research_comparable_sales: browser research found ${result.sales.length} sale(s) for item ${job.itemId}`,
-          );
-          await importAutoResearchedSales(dependencies, job.itemId, facts, result.sales);
-        } else {
-          console.log(
-            `research_comparable_sales: browser research for item ${job.itemId} found no sales -- falling back to the manual search link`,
-          );
+    let foundSales = false;
+    for (const keywords of searchTermCandidates) {
+      let aProviderRanThisSearch = false;
+      for (const provider of dependencies.browserProviders ?? []) {
+        const result = await provider.fetchSoldListings(keywords);
+        if (result.outcome === 'succeeded') {
+          aProviderRanThisSearch = true;
+          if (result.sales.length > 0) {
+            console.log(
+              `research_comparable_sales: browser research found ${result.sales.length} sale(s) for item ${job.itemId} using "${keywords}"`,
+            );
+            await importAutoResearchedSales(dependencies, job.itemId, facts, result.sales);
+            foundSales = true;
+          } else {
+            console.log(
+              `research_comparable_sales: no sales for item ${job.itemId} using "${keywords}"` +
+                (searchTermCandidates.length > 1 ? ' -- trying the next search term, if any' : ''),
+            );
+          }
+          // A real answer (even an empty one) from a working browser for
+          // *this* term -- stop asking the other tier the identical
+          // question, but a still-untried search term is worth a shot.
+          break;
         }
-        // A real answer (even an empty one) from a working browser --
-        // stop the cascade rather than asking a second provider the
-        // identical question against the same live eBay.
-        break;
+        console.log(
+          `research_comparable_sales: browser research unavailable for item ${job.itemId} (${result.reason}) -- trying the next tier`,
+        );
       }
-      console.log(
-        `research_comparable_sales: browser research unavailable for item ${job.itemId} (${result.reason}) -- trying the next tier`,
-      );
+      if (foundSales) break;
+      // No provider was even reachable for this term -- a different
+      // phrasing won't fix that, and repeatedly hitting eBay while it's
+      // already blocking or busy isn't worth it. Stop the whole cascade
+      // rather than burning through every remaining term too.
+      if (!aProviderRanThisSearch) break;
     }
 
-    const url = buildEbaySearchUrlFromKeywords(keywords);
+    const url = buildEbaySearchUrlFromKeywords(searchTermCandidates[0]!);
     await dependencies.jobs.saveIdentificationFacts(job.itemId, [
       {
         field: 'research.ebay_search_url',
@@ -193,6 +210,35 @@ function readFact(facts: { field: string; value: string }[], field: string): str
   }
 }
 
+function readFactStringArray(
+  facts: { field: string; value: string }[],
+  field: string,
+): string[] | undefined {
+  const row = facts.find((fact) => fact.field === field)?.value;
+  if (!row) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(row);
+    if (!Array.isArray(parsed)) return undefined;
+    const strings = parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+    return strings.length > 0 ? strings : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Prefers the identifying vision call's own candidate queries (see
+ * vision-provider.ts's ebaySearchTerms -- phrased the way a real listing
+ * title reads, not a mechanical concatenation) when present, falling back
+ * to buildSearchKeywords' single deterministic string for an item
+ * identified before that field existed. Always at least one entry.
+ */
+export function getSearchTermCandidates(facts: { field: string; value: string }[]): string[] {
+  const fromIdentification = readFactStringArray(facts, 'identity.ebay_search_terms');
+  if (fromIdentification) return fromIdentification.slice(0, 3);
+  return [buildSearchKeywords(facts)];
+}
+
 /**
  * The plain-text search terms shared by both the automated browser search
  * (tier 1) and the manual search-link fallback (tier 3) -- one term-
@@ -200,7 +246,7 @@ function readFact(facts: { field: string; value: string }[], field: string): str
  */
 export function buildSearchKeywords(facts: { field: string; value: string }[]): string {
   const manufacturer = readFact(facts, 'identity.manufacturer');
-  const family = readFact(facts, 'identity.family');
+  const family = readFact(facts, 'identity.family')?.replace(/\s*\([^)]*\)/g, '').trim();
   const model = readFact(facts, 'identity.model');
   const itemType = readFact(facts, 'identity.item_type');
 

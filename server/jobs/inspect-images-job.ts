@@ -339,6 +339,17 @@ function buildIdentificationFacts(
     });
   }
 
+  // Always present (the schema requires at least one) -- see
+  // research-comparable-sales-job.ts's getSearchTermCandidates, which
+  // tries these in order instead of building one query by concatenating
+  // manufacturer/family/model in code.
+  facts.push({
+    field: 'identity.ebay_search_terms',
+    value: JSON.stringify(candidate.ebaySearchTerms),
+    confidence: 1,
+    origin: 'image_inference',
+  });
+
   if (openQuestions.length > 0) {
     facts.push({
       field: 'identity.open_questions',

@@ -22,6 +22,7 @@ For each plausible identity, report:
 - colour when visibly distinct
 - confidence: 0 to 1, calibrated (do not overstate certainty)
 - evidence: a short factual note on what in the photos supports this (a visible label, logo, distinctive shape, etc.)
+- ebaySearchTerms: 1-3 realistic eBay search queries for this candidate, most specific first, phrased the way a real eBay listing title would actually read -- not a mechanical "manufacturer + family + model" concatenation. Drop marketing/series names that a seller's listing title likely wouldn't repeat verbatim (a "family" like "MEG (Unify series)" is worse in a search box than just the model name), and progressively broaden across the list (e.g. ["MSI MEG B550 UNIFY-X", "MSI B550 UNIFY-X", "MSI MEG B550"]) so a later term still finds it if the most specific one turns up nothing.
 
 List candidates most-likely first. Only include an unresolved price-sensitive detail (such as storage capacity, RAM or a variant that materially changes value) in openQuestions if it cannot be determined from the photos and would matter for pricing. Do not invent specifications you cannot see or confidently infer.
 

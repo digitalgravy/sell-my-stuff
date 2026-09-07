@@ -244,6 +244,7 @@ void test('claims a queued job, saves facts and marks the item researching', asy
         manufacturer: 'Apple',
         confidence: 0.92,
         evidence: 'Apple logo and keycap shape visible',
+        ebaySearchTerms: ['Apple wireless keyboard'],
       },
     ],
     openQuestions: [],
@@ -293,7 +294,7 @@ void test('skips condition assessment entirely when no condition provider is con
   seedItem(jobs, objectStore, 'item-1b', 'job-1b');
   const vision = new StubVisionProvider({
     candidates: [
-      { itemType: 'wireless keyboard', confidence: 0.92, evidence: 'Apple logo visible' },
+      { itemType: 'wireless keyboard', confidence: 0.92, evidence: 'Apple logo visible', ebaySearchTerms: ['wireless keyboard'] },
     ],
     openQuestions: [],
     canSearchEbayConfidently: true,
@@ -311,7 +312,7 @@ void test('runs condition assessment alongside identification and saves conditio
   seedItem(jobs, objectStore, 'item-5', 'job-5');
   const vision = new StubVisionProvider({
     candidates: [
-      { itemType: 'wireless keyboard', confidence: 0.92, evidence: 'Apple logo visible' },
+      { itemType: 'wireless keyboard', confidence: 0.92, evidence: 'Apple logo visible', ebaySearchTerms: ['wireless keyboard'] },
     ],
     openQuestions: [],
     canSearchEbayConfidently: true,
@@ -351,7 +352,7 @@ void test('a low-confidence or questioning condition assessment does not block r
   seedItem(jobs, objectStore, 'item-6', 'job-6');
   const vision = new StubVisionProvider({
     candidates: [
-      { itemType: 'wireless keyboard', confidence: 0.95, evidence: 'Apple logo visible' },
+      { itemType: 'wireless keyboard', confidence: 0.95, evidence: 'Apple logo visible', ebaySearchTerms: ['wireless keyboard'] },
     ],
     openQuestions: [],
     canSearchEbayConfidently: true,
@@ -383,7 +384,7 @@ void test('a failing condition provider fails the whole inspect_images job', asy
   seedItem(jobs, objectStore, 'item-7', 'job-7');
   const vision = new StubVisionProvider({
     candidates: [
-      { itemType: 'wireless keyboard', confidence: 0.95, evidence: 'Apple logo visible' },
+      { itemType: 'wireless keyboard', confidence: 0.95, evidence: 'Apple logo visible', ebaySearchTerms: ['wireless keyboard'] },
     ],
     openQuestions: [],
     canSearchEbayConfidently: true,
@@ -424,6 +425,7 @@ void test('converts each photo through the photo converter before identification
         itemType: 'wireless keyboard',
         confidence: 0.92,
         evidence: 'Apple logo visible',
+        ebaySearchTerms: ['wireless keyboard'],
       },
     ],
     openQuestions: [],
@@ -452,6 +454,7 @@ void test('routes low-confidence identification to needs information', async () 
         itemType: 'graphics card',
         confidence: 0.4,
         evidence: 'Fan shroud visible but no legible label',
+        ebaySearchTerms: ['graphics card'],
       },
     ],
     openQuestions: ['Which memory capacity variant is this?'],
@@ -484,7 +487,7 @@ void test('routes a confident-but-generic identification to needs information, e
   seedItem(jobs, objectStore, 'item-8', 'job-8');
   const vision = new StubVisionProvider({
     candidates: [
-      { itemType: 'wireless keyboard', confidence: 0.97, evidence: 'Keycap shape and shroud visible' },
+      { itemType: 'wireless keyboard', confidence: 0.97, evidence: 'Keycap shape and shroud visible', ebaySearchTerms: ['wireless keyboard'] },
     ],
     openQuestions: [],
     canSearchEbayConfidently: false,
@@ -507,7 +510,7 @@ void test('proceeds to research when canSearchEbayConfidently is true and there 
   seedItem(jobs, objectStore, 'item-9', 'job-9');
   const vision = new StubVisionProvider({
     candidates: [
-      { itemType: 'wireless keyboard', manufacturer: 'Apple', model: 'Magic Keyboard', confidence: 0.97, evidence: 'Apple logo and model label visible' },
+      { itemType: 'wireless keyboard', manufacturer: 'Apple', model: 'Magic Keyboard', confidence: 0.97, evidence: 'Apple logo and model label visible', ebaySearchTerms: ['Apple Magic Keyboard'] },
     ],
     openQuestions: [],
     canSearchEbayConfidently: true,

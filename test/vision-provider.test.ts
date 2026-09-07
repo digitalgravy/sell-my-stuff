@@ -11,6 +11,7 @@ void test('accepts a well-formed identification result', () => {
         manufacturer: 'Apple',
         confidence: 0.9,
         evidence: 'Apple logo visible on the top case',
+        ebaySearchTerms: ['Apple wireless keyboard'],
       },
     ],
     openQuestions: [],
@@ -26,12 +27,24 @@ void test('defaults openQuestions to an empty array when omitted', () => {
         itemType: 'graphics card',
         confidence: 0.5,
         evidence: 'Fan shroud shape',
+        ebaySearchTerms: ['graphics card'],
       },
     ],
     canSearchEbayConfidently: false,
     searchReadinessNote: 'No manufacturer or model visible in any photo.',
   });
   assert.deepEqual(parsed.openQuestions, []);
+});
+
+void test('requires at least one ebaySearchTerms entry per candidate', () => {
+  assert.throws(() =>
+    identificationResultSchema.parse({
+      candidates: [
+        { itemType: 'wireless keyboard', confidence: 0.9, evidence: 'label', ebaySearchTerms: [] },
+      ],
+      canSearchEbayConfidently: true,
+    }),
+  );
 });
 
 void test('requires canSearchEbayConfidently -- a generic-but-confident identification still needs it reasoned about explicitly', () => {
@@ -47,7 +60,14 @@ void test('requires canSearchEbayConfidently -- a generic-but-confident identifi
 void test('searchReadinessNote is optional -- only needed when canSearchEbayConfidently is false', () => {
   const parsed = identificationResultSchema.parse({
     candidates: [
-      { itemType: 'wireless keyboard', manufacturer: 'Apple', model: 'Magic Keyboard', confidence: 0.95, evidence: 'label' },
+      {
+        itemType: 'wireless keyboard',
+        manufacturer: 'Apple',
+        model: 'Magic Keyboard',
+        confidence: 0.95,
+        evidence: 'label',
+        ebaySearchTerms: ['Apple Magic Keyboard'],
+      },
     ],
     canSearchEbayConfidently: true,
   });

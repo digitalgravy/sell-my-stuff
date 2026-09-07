@@ -26,6 +26,17 @@ export const identificationCandidateSchema = z.object({
   colour: z.string().min(1).optional(),
   confidence: z.number().min(0).max(1),
   evidence: z.string().min(1),
+  /**
+   * 1-3 realistic eBay search queries for this candidate, most specific
+   * first -- deliberately not just "manufacturer + family + model"
+   * concatenated in code: a marketing/series name (e.g. a family field
+   * like "MEG (Unify series)") makes a worse query than the plain model
+   * name a real listing title would use, and the model is better placed to
+   * judge real listing-title phrasing than a fixed string-join. Tried in
+   * order by research-comparable-sales-job.ts until one finds sold
+   * listings.
+   */
+  ebaySearchTerms: z.array(z.string().min(1)).min(1).max(3),
 });
 
 export const identificationResultSchema = z.object({
