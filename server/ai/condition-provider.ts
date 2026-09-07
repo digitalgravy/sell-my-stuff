@@ -1,24 +1,18 @@
 import { z } from 'zod';
 
+import { CONDITION_GRADES } from '@/lib/fact-fields';
+
 import type { PhotoForIdentification } from './vision-provider';
 
 /**
- * BRIEF.md's "Condition model" grade ladder (new/sealed through
- * spares/repair) -- the headline value shown to the user, backed by its own
- * confidence/evidence like every other field here rather than asserted
- * outright.
+ * The grade ladder itself (BRIEF.md's "Condition model", new/sealed
+ * through spares/repair) lives in lib/fact-fields.ts, shared with the
+ * facts-editing UI so a client component can offer the same closed set of
+ * options without importing this server-only module. Re-exported here so
+ * every existing import of CONDITION_GRADES/ConditionGrade from this file
+ * keeps working unchanged.
  */
-export const CONDITION_GRADES = [
-  'new_sealed',
-  'unused_open_box',
-  'excellent',
-  'very_good',
-  'good',
-  'fair',
-  'spares_repair',
-] as const;
-
-export type ConditionGrade = (typeof CONDITION_GRADES)[number];
+export { CONDITION_GRADES, type ConditionGrade } from '@/lib/fact-fields';
 
 export const conditionFieldSchema = z.object({
   value: z.string().min(1),

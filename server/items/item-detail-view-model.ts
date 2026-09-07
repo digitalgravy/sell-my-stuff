@@ -492,6 +492,7 @@ const SIMPLE_EVENT_STAGE: Record<string, { stage: string; type: BuildStep['type'
   research_regenerated: { stage: 'Regenerate eBay search', type: 'tool' },
   identification_retried: { stage: 'Retry identification', type: 'tool' },
   sale_excluded_toggled: { stage: 'Adjust evidence', type: 'policy' },
+  fact_confirmed: { stage: 'Confirm a fact', type: 'policy' },
 };
 
 export function buildStepFromSimpleEvent(event: SimpleEventForBuildStep): BuildStep {
@@ -508,6 +509,16 @@ export function buildStepFromSimpleEvent(event: SimpleEventForBuildStep): BuildS
     blocks.push({
       label: detail?.excluded ? 'Excluded' : 'Included',
       content: detail?.saleTitle ?? 'A comparable sale was manually toggled.',
+    });
+  } else if (event.kind === 'fact_confirmed') {
+    const detail = event.detail as { field?: string; value?: string; previousConfidence?: number } | null;
+    blocks.push({
+      label: detail?.field ?? 'Fact',
+      meta:
+        detail?.previousConfidence !== undefined
+          ? `${Math.round(detail.previousConfidence * 100)}% → 100% confidence`
+          : undefined,
+      content: detail?.value ?? 'A fact was manually confirmed.',
     });
   }
   return {

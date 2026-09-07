@@ -149,6 +149,7 @@ export interface ItemDetail {
 
 export type RetryOutcome = { ok: true } | { ok: false; reason: string };
 export type CorrectFactOutcome = { ok: true } | { ok: false; reason: string };
+export type ConfirmFactOutcome = { ok: true } | { ok: false; reason: string };
 export type UndoCorrectionOutcome = { ok: true } | { ok: false; reason: string };
 export type RegenerateResearchOutcome = { ok: true } | { ok: false; reason: string };
 
@@ -174,6 +175,14 @@ export interface ItemDetailRepository {
   ): Promise<CorrectFactOutcome>;
   /** Reverts one correction to exactly its prior value (or removes the fact if there was none before it). */
   undoCorrection(itemId: string, correctionId: string): Promise<UndoCorrectionOutcome>;
+  /**
+   * Locks in a fact's current value without changing it -- confidence: 1,
+   * origin: 'user_confirmed', same as correctFact, but with no new value
+   * and so no fact_corrections row (there is nothing to diff or undo to).
+   * Always logs a Build log entry so a confirmation is part of the audit
+   * trail the same as an edit is.
+   */
+  confirmFact(itemId: string, field: string): Promise<ConfirmFactOutcome>;
   /** Manually re-queues research_comparable_sales -- e.g. after correcting a fact the eBay search was built from. */
   regenerateResearch(itemId: string): Promise<RegenerateResearchOutcome>;
   /**

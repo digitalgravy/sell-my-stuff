@@ -27,6 +27,7 @@ import { deleteItemEventBySource, ITEM_EVENT_KIND, logItemEvent } from './item-e
 import type {
   BuildStep,
   ComparableSale,
+  ConfirmFactOutcome,
   CorrectFactOutcome,
   EvidenceInfo,
   ItemDetail,
@@ -638,6 +639,27 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         });
     });
 
+    return { ok: true };
+  }
+
+  async confirmFact(itemId: string, field: string): Promise<ConfirmFactOutcome> {
+    const database = getDatabase();
+    const [existing] = await database
+      .select({ value: itemFacts.value, confidence: itemFacts.confidence })
+      .from(itemFacts)
+      .where(and(eq(itemFacts.itemId, itemId), eq(itemFacts.field, field)));
+    if (!existing) return { ok: false, reason: 'Fact not found' };
+
+    await database
+      .update(itemFacts)
+      .set({ confidence: 1, origin: 'user_confirmed', retrievedAt: new Date() })
+      .where(and(eq(itemFacts.itemId, itemId), eq(itemFacts.field, field)));
+    await logItemEvent({
+      itemId,
+      kind: ITEM_EVENT_KIND.FACT_CONFIRMED,
+      summary: `Confirmed ${field}`,
+      detail: { field, value: existing.value, previousConfidence: existing.confidence },
+    });
     return { ok: true };
   }
 

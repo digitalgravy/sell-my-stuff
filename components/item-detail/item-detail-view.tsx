@@ -43,9 +43,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { getEnumFactField } from '@/lib/fact-fields';
 import { cn } from '@/lib/utils';
 import { usdToGbp } from '@/server/ai/pricing';
 import type {
@@ -128,6 +136,7 @@ export function ItemDetailView({
   const [draftValue, setDraftValue] = useState('');
   const [undoingEndpoint, setUndoingEndpoint] = useState<string | null>(null);
   const [regeneratingResearch, setRegeneratingResearch] = useState(false);
+  const [confirmingField, setConfirmingField] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -269,6 +278,40 @@ export function ItemDetailView({
       .catch(() => undefined)
       .finally(() => setCorrecting(null));
   }, [apiBase, correcting, detail, draftValue, readOnly]);
+
+  const confirmFact = useCallback(
+    (field: string) => {
+      if (!detail) return;
+
+      if (readOnly) {
+        setDetail({
+          ...detail,
+          facts: detail.facts.map((fact) =>
+            fact.field === field ? { ...fact, confidence: 1, origin: 'user_confirmed' } : fact,
+          ),
+        });
+        return;
+      }
+
+      setConfirmingField(field);
+      fetch(`${apiBase}/facts/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field }),
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error();
+          return requestItemDetail(apiBase);
+        })
+        .then((data) => {
+          setDetail(data);
+          setStatus('ready');
+        })
+        .catch(() => undefined)
+        .finally(() => setConfirmingField(null));
+    },
+    [apiBase, detail, readOnly],
+  );
 
   const handleAttentionCta = useCallback(
     (task: AttentionTask) => {
@@ -426,6 +469,8 @@ export function ItemDetailView({
                   detail={detail}
                   onAttentionCta={handleAttentionCta}
                   onCorrectFact={openCorrection}
+                  onConfirmFact={confirmFact}
+                  confirmingField={confirmingField}
                 />
               </TabsContent>
               <TabsContent value="listing" className="mt-6">
@@ -492,16 +537,32 @@ export function ItemDetailView({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Correct &ldquo;{correcting?.label}&rdquo;</DialogTitle>
+            <DialogTitle>Change &ldquo;{correcting?.label}&rdquo;</DialogTitle>
             <DialogDescription>
               This becomes the authoritative value — it overrides whatever the pipeline
               inferred.
             </DialogDescription>
           </DialogHeader>
-          <Input
-            value={draftValue}
-            onChange={(event) => setDraftValue(event.target.value)}
-          />
+          {correcting && getEnumFactField(correcting.field) ? (
+            <Select value={draftValue} onValueChange={(value) => setDraftValue(value ?? '')}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Choose one" />
+              </SelectTrigger>
+              <SelectContent>
+                {getEnumFactField(correcting.field)!.options.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Textarea
+              rows={4}
+              value={draftValue}
+              onChange={(event) => setDraftValue(event.target.value)}
+            />
+          )}
           <DialogFooter>
             <Button onClick={saveCorrection} disabled={draftValue.trim().length === 0}>
               Save correction
@@ -753,10 +814,14 @@ function OverviewTab({
   detail,
   onAttentionCta,
   onCorrectFact,
+  onConfirmFact,
+  confirmingField,
 }: {
   detail: ItemDetail;
   onAttentionCta: (task: AttentionTask) => void;
   onCorrectFact: (field: string, label: string) => void;
+  onConfirmFact: (field: string) => void;
+  confirmingField: string | null;
 }) {
   const required = detail.attention.filter((task) => task.required);
   const optional = detail.attention.filter((task) => !task.required);
@@ -822,7 +887,12 @@ function OverviewTab({
                     </span>
                   </div>
                 </div>
-                <FactGrid facts={group.facts} onCorrectFact={onCorrectFact} />
+                <FactGrid
+                  facts={group.facts}
+                  onCorrectFact={onCorrectFact}
+                  onConfirmFact={onConfirmFact}
+                  confirmingField={confirmingField}
+                />
               </section>
             );
           })
@@ -860,9 +930,13 @@ function groupFacts(
 function FactGrid({
   facts,
   onCorrectFact,
+  onConfirmFact,
+  confirmingField,
 }: {
   facts: ItemDetailFact[];
   onCorrectFact: (field: string, label: string) => void;
+  onConfirmFact: (field: string) => void;
+  confirmingField: string | null;
 }) {
   const rows: ItemDetailFact[][] = [];
   for (let i = 0; i < facts.length; i += 2) rows.push(facts.slice(i, i + 2));
@@ -875,7 +949,13 @@ function FactGrid({
           className="grid grid-cols-1 gap-x-8 gap-y-5 py-5 sm:grid-cols-2"
         >
           {row.map((fact) => (
-            <FactCell key={fact.field} fact={fact} onCorrectFact={onCorrectFact} />
+            <FactCell
+              key={fact.field}
+              fact={fact}
+              onCorrectFact={onCorrectFact}
+              onConfirmFact={onConfirmFact}
+              confirming={confirmingField === fact.field}
+            />
           ))}
         </div>
       ))}
@@ -886,21 +966,37 @@ function FactGrid({
 function FactCell({
   fact,
   onCorrectFact,
+  onConfirmFact,
+  confirming,
 }: {
   fact: ItemDetailFact;
   onCorrectFact: (field: string, label: string) => void;
+  onConfirmFact: (field: string) => void;
+  confirming: boolean;
 }) {
+  const alreadyConfirmed = fact.origin === 'user_confirmed';
   return (
     <div>
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs text-muted-foreground">{humanizeField(fact.field)}</p>
-        <button
-          type="button"
-          className="-my-1 shrink-0 rounded-md px-1 py-1 text-sm font-medium text-primary hover:underline"
-          onClick={() => onCorrectFact(fact.field, humanizeField(fact.field))}
-        >
-          Correct
-        </button>
+        <div className="-my-1 flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            className="rounded-md px-1 py-1 text-sm font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
+            disabled={alreadyConfirmed || confirming}
+            onClick={() => onConfirmFact(fact.field)}
+          >
+            {confirming ? 'Confirming…' : 'Confirm'}
+          </button>
+          <span className="text-muted-foreground/50">·</span>
+          <button
+            type="button"
+            className="rounded-md px-1 py-1 text-sm font-medium text-primary hover:underline"
+            onClick={() => onCorrectFact(fact.field, humanizeField(fact.field))}
+          >
+            Change
+          </button>
+        </div>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <p className="text-[15px] font-semibold">{formatFactValue(fact.value)}</p>

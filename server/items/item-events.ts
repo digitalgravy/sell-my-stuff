@@ -21,6 +21,7 @@ export const ITEM_EVENT_KIND = {
   RESEARCH_REGENERATED: 'research_regenerated',
   IDENTIFICATION_RETRIED: 'identification_retried',
   FACT_CORRECTED: 'fact_corrected',
+  FACT_CONFIRMED: 'fact_confirmed',
   SALE_EXCLUDED_TOGGLED: 'sale_excluded_toggled',
 } as const;
 
