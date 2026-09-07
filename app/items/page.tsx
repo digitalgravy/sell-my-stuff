@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowDown, ArrowUp, ArrowUpDown, Menu, Sparkles } from 'lucide-react';
 
+import { CompactPhaseStrip } from '@/components/phase-strip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -217,6 +218,7 @@ export default function ItemsPage() {
                       direction={sortDirection}
                       onSort={toggleSort}
                     />
+                    <TableHead>Progress</TableHead>
                     <SortableHead
                       column="price"
                       active={sortColumn}
@@ -265,6 +267,11 @@ export default function ItemsPage() {
                           {item.detail ? (
                             <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
                           ) : null}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <Link href={`/items/${item.id}`} className="block">
+                          <CompactPhaseStrip phases={item.phases} />
                         </Link>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">

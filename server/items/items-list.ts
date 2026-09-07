@@ -1,7 +1,7 @@
 import { usdToGbp } from '@/server/ai/pricing';
 
 import { estimateMarketplaceFeeGbp } from './fees';
-import type { ItemDetail, ItemDetailFact } from './item-detail-repository';
+import type { ItemDetail, ItemDetailFact, PhaseInfo } from './item-detail-repository';
 import type { ItemStatusValue } from './research-repository';
 
 export type ItemListPill = 'needs_action' | 'ready' | 'at_auction' | 'complete' | 'in_progress';
@@ -18,6 +18,8 @@ export interface ItemListEntry {
   detail?: string;
   /** The recommended Buy-It-Now price minus AI research cost so far and an approximate marketplace fee -- see server/items/fees.ts. */
   estimatedProfit?: number;
+  /** Identified/Assessed/Researched/Draft ready -- same PhaseInfo the item detail page's header strip renders, for a compact per-row progress indicator. */
+  phases: PhaseInfo[];
 }
 
 const PILL_LABEL: Record<ItemListPill, string> = {
@@ -89,5 +91,6 @@ export function buildItemListEntry(detail: ItemDetail): ItemListEntry {
         : detail.pricing.buyItNowPrice -
           usdToGbp(detail.aiCostUsd) -
           estimateMarketplaceFeeGbp(detail.pricing.buyItNowPrice),
+    phases: detail.phases,
   };
 }

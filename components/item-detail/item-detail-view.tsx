@@ -53,6 +53,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { PhaseStrip } from '@/components/phase-strip';
 import { getEnumFactField } from '@/lib/fact-fields';
 import { cn } from '@/lib/utils';
 import { EBAY_UK_APPROX_FINAL_VALUE_FEE_RATE } from '@/server/items/fees';
@@ -609,34 +610,6 @@ export function ItemDetailView({
         submitting={resolvingAnswers}
       />
     </main>
-  );
-}
-
-function PhaseStrip({ phases }: { phases: ItemDetail['phases'] }) {
-  return (
-    <ol className="mt-7 flex items-stretch gap-3">
-      {phases.map((phase) => (
-        <li key={phase.key} className="flex-1">
-          <div
-            className={cn(
-              'h-1.5 rounded-full',
-              phase.state === 'done' && 'bg-primary',
-              phase.state === 'pending' && 'bg-warning',
-              phase.state === 'not_started' && 'bg-muted',
-            )}
-          />
-          <p
-            className={cn(
-              'mt-2.5 text-sm font-semibold',
-              phase.state === 'not_started' && 'text-muted-foreground',
-            )}
-          >
-            {phase.label}
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{phase.detail}</p>
-        </li>
-      ))}
-    </ol>
   );
 }
 
