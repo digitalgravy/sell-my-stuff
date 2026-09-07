@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { formatDistanceToNowStrict } from 'date-fns';
 import {
   Camera,
   Check,
@@ -21,6 +20,7 @@ import {
 import { ActivityBadge } from '@/components/activity-badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { formatGBP, relativeTime } from '@/lib/format';
 import { isSupportedImage } from '@/lib/capture-policy';
 import type {
   AttentionItem,
@@ -44,20 +44,6 @@ const EMPTY_STATS: HomepageStats = {
   realisedTotal: 0,
   estimatedValueTotal: 0,
 };
-
-function formatGBP(amount: number): string {
-  return new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency: 'GBP',
-    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
-  }).format(amount);
-}
-
-function relativeTime(isoTimestamp: string): string {
-  return formatDistanceToNowStrict(new Date(isoTimestamp), {
-    addSuffix: true,
-  });
-}
 
 const HOMEPAGE_POLL_INTERVAL_MS = 8_000;
 
@@ -275,10 +261,15 @@ export default function Home() {
             className="hidden items-center gap-7 text-[13px] font-medium md:flex"
             aria-label="Main navigation"
           >
-            <button className="text-foreground">Home</button>
-            <button className="text-muted-foreground transition-colors hover:text-foreground">
+            <Link href="/" className="text-foreground">
+              Home
+            </Link>
+            <Link
+              href="/items"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
               Items
-            </button>
+            </Link>
             <button className="text-muted-foreground transition-colors hover:text-foreground">
               Sales
             </button>
