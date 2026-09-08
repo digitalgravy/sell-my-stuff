@@ -14,6 +14,7 @@ import { getDatabase } from '@/server/db/client';
 export const ITEM_EVENT_KIND = {
   IDENTIFICATION_RUN: 'identification_run',
   CONDITION_RUN: 'condition_run',
+  DIMENSIONS_RUN: 'dimensions_run',
   MATCH_RUN: 'match_run',
   COMPARABLE_SALES_IMPORTED: 'comparable_sales_imported',
   EBAY_SEARCH_PREPARED: 'ebay_search_prepared',

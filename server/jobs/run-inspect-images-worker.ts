@@ -1,5 +1,6 @@
 import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-comparable-match-provider';
 import { getAnthropicConditionProvider } from '@/server/ai/anthropic-condition-provider';
+import { getAnthropicDimensionsProvider } from '@/server/ai/anthropic-dimensions-provider';
 import { getAnthropicVisionProvider } from '@/server/ai/anthropic-vision-provider';
 import { getPhotoConverter } from '@/server/ai/heic-photo-converter';
 import { PostgresResearchJobRepository } from '@/server/items/postgres-research-repository';
@@ -24,6 +25,7 @@ async function main() {
     objectStore: getFileObjectStore(),
     vision: getAnthropicVisionProvider(),
     condition: getAnthropicConditionProvider(),
+    dimensions: getAnthropicDimensionsProvider(),
     photoConverter: getPhotoConverter(),
     // Mac first (real Chrome, real trusted-device identity -- most
     // likely to get through eBay's bot detection), Docker sell-browser

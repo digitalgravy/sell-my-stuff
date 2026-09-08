@@ -538,6 +538,9 @@ export function ItemDetailView({
                   <TabsTrigger value="evidence" className="rounded-full">
                     Evidence
                   </TabsTrigger>
+                  <TabsTrigger value="packaging" className="rounded-full">
+                    Packaging &amp; Delivery
+                  </TabsTrigger>
                   <TabsTrigger value="build-log" className="rounded-full">
                     Build log
                   </TabsTrigger>
@@ -558,6 +561,14 @@ export function ItemDetailView({
               </TabsContent>
               <TabsContent value="evidence" className="mt-6">
                 <EvidenceTab detail={detail} itemId={itemId} readOnly={readOnly} onImported={reload} />
+              </TabsContent>
+              <TabsContent value="packaging" className="mt-6">
+                <PackagingTab
+                  detail={detail}
+                  onCorrectFact={openCorrection}
+                  onConfirmFact={confirmFact}
+                  confirmingField={confirmingField}
+                />
               </TabsContent>
               <TabsContent value="build-log" className="mt-6">
                 <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
@@ -921,6 +932,9 @@ function OverviewTab({
 }) {
   const required = detail.attention.filter((task) => task.required);
   const optional = detail.attention.filter((task) => !task.required);
+  // Packaging facts get their own "Packaging & Delivery" tab (see
+  // PackagingTab), not another Overview section.
+  const overviewFacts = detail.facts.filter((fact) => !fact.field.startsWith('packaging.'));
 
   return (
     <div className="space-y-7">
@@ -953,13 +967,13 @@ function OverviewTab({
       </section>
 
       <div id={FACTS_SECTION_ID} className="space-y-7 scroll-mt-20">
-        {detail.facts.length === 0 ? (
+        {overviewFacts.length === 0 ? (
           <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
             <h2 className="text-lg font-semibold tracking-[-0.03em]">Facts</h2>
             <p className="mt-3.5 text-sm text-muted-foreground">No facts recorded yet.</p>
           </section>
         ) : (
-          groupFacts(detail.facts).map((group) => {
+          groupFacts(overviewFacts).map((group) => {
             const lowConfidenceCount = group.facts.filter(
               (fact) => fact.confidence < LOW_CONFIDENCE_THRESHOLD,
             ).length;
@@ -1109,6 +1123,70 @@ function FactCell({
         {Math.round(fact.confidence * 100)}% confidence · {fact.origin} ·{' '}
         {relativeTime(fact.retrievedAt)}
       </p>
+    </div>
+  );
+}
+
+function PackagingTab({
+  detail,
+  onCorrectFact,
+  onConfirmFact,
+  confirmingField,
+}: {
+  detail: ItemDetail;
+  onCorrectFact: (field: string, label: string) => void;
+  onConfirmFact: (field: string) => void;
+  confirmingField: string | null;
+}) {
+  const packagingFacts = detail.facts.filter((fact) => fact.field.startsWith('packaging.'));
+
+  return (
+    <div className="space-y-7">
+      <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
+        <h2 className="text-lg font-semibold tracking-[-0.03em]">Estimated packaging</h2>
+        {packagingFacts.length === 0 ? (
+          <p className="mt-3.5 text-sm text-muted-foreground">
+            No dimensions estimate yet -- this runs alongside identification and condition
+            assessment.
+          </p>
+        ) : (
+          <FactGrid
+            facts={packagingFacts}
+            onCorrectFact={onCorrectFact}
+            onConfirmFact={onConfirmFact}
+            confirmingField={confirmingField}
+          />
+        )}
+      </section>
+
+      <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
+        <h2 className="text-lg font-semibold tracking-[-0.03em]">Recommended packaging</h2>
+        {!detail.packaging ? (
+          <p className="mt-3.5 text-sm text-muted-foreground">
+            Recommended box size and materials appear once a fragility grade has been estimated.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-4">
+            <p className="text-sm">
+              <span className="text-muted-foreground">Box size: </span>
+              <span className="font-medium">{detail.packaging.boxSizeTier}</span>
+            </p>
+            <ul className="divide-y divide-border/70 text-sm">
+              {detail.packaging.materials.map((material) => (
+                <li key={material.material} className="flex items-center justify-between py-2.5">
+                  <span>{material.material}</span>
+                  <span className="tabular-nums text-muted-foreground">×{material.quantity}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
+        <h2 className="text-lg font-semibold tracking-[-0.03em]">Postage</h2>
+        <p className="mt-3.5 text-sm text-muted-foreground">Postage research not built yet.</p>
+      </section>
     </div>
   );
 }

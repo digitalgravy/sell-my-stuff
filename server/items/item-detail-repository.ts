@@ -1,5 +1,6 @@
 import type { ProceedsBreakdown } from './fees';
 import type { ActivityState } from './homepage-snapshot';
+import type { PackagingRecommendation } from './packaging';
 import type { ItemStatusValue } from './research-repository';
 
 export interface ItemDetailPhoto {
@@ -143,6 +144,8 @@ export interface ItemDetail {
   proceeds?: ProceedsBreakdown;
   /** Undefined until a real listing-drafting stage exists. */
   listing?: ListingInfo;
+  /** Undefined until the dimensions/packaging AI stage has run and recorded at least a fragility grade. */
+  packaging?: PackagingRecommendation;
   /** Undefined until real comparable-sales research exists. */
   evidence?: EvidenceInfo;
   /** Real Anthropic API spend so far (identification + condition assessment + match classification calls), in USD -- 0, not undefined, when nothing has run yet. */

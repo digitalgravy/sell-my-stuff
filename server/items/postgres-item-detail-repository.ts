@@ -2,10 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
+import type { FragilityGrade, SpecialHandlingFlag } from '@/lib/fact-fields';
+
 import {
   answerResolutionRuns,
   comparableSales,
   conditionAssessmentRuns,
+  dimensionAssessmentRuns,
   factCorrections,
   identificationRuns,
   itemEvents,
@@ -62,6 +65,7 @@ import {
   buildStepsFromAnswerResolutionRuns,
   buildStepsFromConditionRuns,
   buildStepsFromCorrections,
+  buildStepsFromDimensionRuns,
   buildStepsFromImports,
   buildStepsFromMatchRuns,
   buildStepsFromRuns,
@@ -73,6 +77,7 @@ import {
   completeMatchClassificationRun,
   startMatchClassificationRun,
 } from './match-classification-runs';
+import { derivePackagingRecommendation } from './packaging';
 import { computeValuation } from './valuation';
 
 const IDENTITY_FACT_FIELDS = new Set([
@@ -113,6 +118,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       eventRows,
       runRows,
       conditionRunRows,
+      dimensionRunRows,
       matchRunRows,
       answerResolutionRunRows,
       [job],
@@ -184,6 +190,23 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .from(conditionAssessmentRuns)
         .where(eq(conditionAssessmentRuns.itemId, itemId))
         .orderBy(desc(conditionAssessmentRuns.startedAt)),
+      database
+        .select({
+          id: dimensionAssessmentRuns.id,
+          attempt: dimensionAssessmentRuns.attempt,
+          provider: dimensionAssessmentRuns.provider,
+          model: dimensionAssessmentRuns.model,
+          outcome: dimensionAssessmentRuns.outcome,
+          inputTokens: dimensionAssessmentRuns.inputTokens,
+          outputTokens: dimensionAssessmentRuns.outputTokens,
+          response: dimensionAssessmentRuns.response,
+          errorMessage: dimensionAssessmentRuns.errorMessage,
+          startedAt: dimensionAssessmentRuns.startedAt,
+          completedAt: dimensionAssessmentRuns.completedAt,
+        })
+        .from(dimensionAssessmentRuns)
+        .where(eq(dimensionAssessmentRuns.itemId, itemId))
+        .orderBy(desc(dimensionAssessmentRuns.startedAt)),
       database
         .select({
           id: matchClassificationRuns.id,
@@ -281,6 +304,24 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       position: row.position,
     }));
 
+    const factNumber = (field: string): number | undefined => {
+      const value = facts.find((fact) => fact.field === field)?.value;
+      return typeof value === 'number' ? value : undefined;
+    };
+    const factStringArray = (field: string): string[] | undefined => {
+      const value = facts.find((fact) => fact.field === field)?.value;
+      return Array.isArray(value) ? (value as string[]) : undefined;
+    };
+    const fragilityValue = facts.find((fact) => fact.field === 'packaging.fragility')?.value;
+    const packaging = derivePackagingRecommendation({
+      lengthCm: factNumber('packaging.length_cm'),
+      widthCm: factNumber('packaging.width_cm'),
+      heightCm: factNumber('packaging.height_cm'),
+      weightKg: factNumber('packaging.weight_kg'),
+      fragility: typeof fragilityValue === 'string' ? (fragilityValue as FragilityGrade) : undefined,
+      specialHandling: factStringArray('packaging.special_handling') as SpecialHandlingFlag[] | undefined,
+    });
+
     // item_events is now the single source of the Build log (see its doc
     // comment in db/schema.ts) -- one query, already in the right order
     // (newest first, by the stable `sequence` assigned at creation).
@@ -289,6 +330,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     // renders straight from the event's own summary/detail.
     const identificationRunById = new Map(runRows.map((row) => [row.id, row]));
     const conditionRunById = new Map(conditionRunRows.map((row) => [row.id, row]));
+    const dimensionRunById = new Map(dimensionRunRows.map((row) => [row.id, row]));
     const matchRunById = new Map(matchRunRows.map((row) => [row.id, row]));
     const answerResolutionRunById = new Map(answerResolutionRunRows.map((row) => [row.id, row]));
     const captureById = new Map(captureRows.map((row) => [row.id, row]));
@@ -322,6 +364,29 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
           const run = event.sourceId ? conditionRunById.get(event.sourceId) : undefined;
           if (!run) return [];
           return buildStepsFromConditionRuns(
+            [
+              {
+                id: event.id,
+                sequence: event.sequence,
+                attempt: run.attempt,
+                provider: run.provider,
+                model: run.model,
+                outcome: run.outcome ?? undefined,
+                inputTokens: run.inputTokens ?? undefined,
+                outputTokens: run.outputTokens ?? undefined,
+                response: run.response ?? undefined,
+                errorMessage: run.errorMessage ?? undefined,
+                startedAt: run.startedAt.toISOString(),
+                completedAt: run.completedAt?.toISOString(),
+              },
+            ],
+            photoRows.length,
+          );
+        }
+        case ITEM_EVENT_KIND.DIMENSIONS_RUN: {
+          const run = event.sourceId ? dimensionRunById.get(event.sourceId) : undefined;
+          if (!run) return [];
+          return buildStepsFromDimensionRuns(
             [
               {
                 id: event.id,
@@ -442,6 +507,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     const aiCostUsd =
       sumRunCosts(runRows) +
       sumRunCosts(conditionRunRows) +
+      sumRunCosts(dimensionRunRows) +
       sumRunCosts(matchRunRows) +
       sumRunCosts(answerResolutionRunRows);
     const pricing = computeValuation(comparableSaleList);
@@ -473,6 +539,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         hasEvidence: comparableSaleList.length > 0,
       }),
       evidence: comparableSaleList.length > 0 ? buildEvidence(comparableSaleList) : undefined,
+      packaging,
       pricing,
       proceeds: pricing
         ? computeProceedsBreakdown(pricing.buyItNowPrice, usdToGbp(aiCostUsd))

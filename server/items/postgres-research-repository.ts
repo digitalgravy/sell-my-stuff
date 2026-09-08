@@ -9,6 +9,10 @@ import {
   completeConditionAssessmentRun as completeConditionAssessmentRunRow,
   startConditionAssessmentRun as startConditionAssessmentRunRow,
 } from './condition-assessment-runs';
+import {
+  completeDimensionAssessmentRun as completeDimensionAssessmentRunRow,
+  startDimensionAssessmentRun as startDimensionAssessmentRunRow,
+} from './dimension-assessment-runs';
 import { ITEM_EVENT_KIND, logItemEvent as logItemEventRow } from './item-events';
 import {
   completeMatchClassificationRun as completeMatchClassificationRunRow,
@@ -19,6 +23,8 @@ import type {
   ComparableSaleInput,
   ConditionAssessmentRunCompleteInput,
   ConditionAssessmentRunStartInput,
+  DimensionAssessmentRunCompleteInput,
+  DimensionAssessmentRunStartInput,
   IdentificationFactInput,
   IdentificationRunCompleteInput,
   IdentificationRunStartInput,
@@ -186,6 +192,18 @@ export class PostgresResearchJobRepository implements ResearchJobRepository {
     entry: ConditionAssessmentRunCompleteInput,
   ): Promise<void> {
     return completeConditionAssessmentRunRow(entry);
+  }
+
+  async startDimensionAssessmentRun(
+    entry: DimensionAssessmentRunStartInput,
+  ): Promise<{ runId: string }> {
+    return startDimensionAssessmentRunRow(entry);
+  }
+
+  async completeDimensionAssessmentRun(
+    entry: DimensionAssessmentRunCompleteInput,
+  ): Promise<void> {
+    return completeDimensionAssessmentRunRow(entry);
   }
 
   async markPhotosInspected(photoIds: string[]): Promise<void> {

@@ -68,6 +68,12 @@ class MemoryJobRepository implements ResearchJobRepository {
 
   async completeConditionAssessmentRun() {}
 
+  async startDimensionAssessmentRun() {
+    return { runId: 'dimension-run-unused' };
+  }
+
+  async completeDimensionAssessmentRun() {}
+
   async markPhotosInspected() {}
 
   async transitionItemStatus() {}

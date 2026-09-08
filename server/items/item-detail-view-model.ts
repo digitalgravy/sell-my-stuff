@@ -1,6 +1,7 @@
 import { ANSWER_RESOLUTION_SYSTEM_PROMPT } from '@/server/ai/anthropic-answer-resolution-provider';
 import { MATCH_SYSTEM_PROMPT } from '@/server/ai/anthropic-comparable-match-provider';
 import { CONDITION_SYSTEM_PROMPT } from '@/server/ai/anthropic-condition-provider';
+import { DIMENSIONS_SYSTEM_PROMPT } from '@/server/ai/anthropic-dimensions-provider';
 import { SYSTEM_PROMPT } from '@/server/ai/anthropic-vision-provider';
 import { estimateCostUsd } from '@/server/ai/pricing';
 
@@ -356,6 +357,64 @@ export function buildStepsFromConditionRuns(
           label: 'User turn',
           meta: `${photoCount} photo${photoCount === 1 ? '' : 's'}`,
           content: 'Assess the condition of this item for resale.',
+        },
+        ...(run.outcome === 'succeeded'
+          ? [
+              {
+                label: 'Assistant response',
+                meta: costMeta(run.model, run.inputTokens, run.outputTokens),
+                content: JSON.stringify(run.response, null, 2),
+              },
+            ]
+          : run.outcome === 'failed'
+            ? [{ label: 'Error', content: run.errorMessage ?? 'Unknown error' }]
+            : [{ label: 'Waiting', content: 'No response from Anthropic yet.' }]),
+      ],
+    };
+  });
+}
+
+/**
+ * Every real dimension_assessment_runs row becomes exactly one build step,
+ * the same pending/resolved shape as buildStepsFromConditionRuns -- a
+ * separate vision turn from identification/condition (see
+ * dimensions-provider.ts), so it gets its own stage label.
+ */
+export function buildStepsFromDimensionRuns(
+  runs: RunForBuildStep[],
+  photoCount: number,
+): BuildStep[] {
+  return runs.map((run) => {
+    const detail =
+      run.outcome === 'succeeded'
+        ? `Vision model turn · attempt ${run.attempt} · packaging estimated`
+        : run.outcome === 'failed'
+          ? `Vision model turn · attempt ${run.attempt} · failed`
+          : `Vision model turn · attempt ${run.attempt} · submitted, waiting for a response`;
+    return {
+      id: run.id,
+      sequence: run.sequence,
+      stage: 'Estimate packaging',
+      detail,
+      type: 'llm',
+      outcome: run.outcome ?? 'pending',
+      durationMs:
+        run.outcome === undefined || !run.completedAt
+          ? 0
+          : Math.max(
+              0,
+              new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(),
+            ),
+      blocks: [
+        {
+          label: 'System prompt',
+          meta: `${run.provider} · ${run.model}`,
+          content: DIMENSIONS_SYSTEM_PROMPT,
+        },
+        {
+          label: 'User turn',
+          meta: `${photoCount} photo${photoCount === 1 ? '' : 's'}`,
+          content: 'Estimate its packed size, weight and fragility for postage.',
         },
         ...(run.outcome === 'succeeded'
           ? [

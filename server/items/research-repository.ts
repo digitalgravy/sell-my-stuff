@@ -71,6 +71,28 @@ export interface ConditionAssessmentRunCompleteInput {
   completedAt: Date;
 }
 
+export type DimensionAssessmentRunOutcome = 'succeeded' | 'failed';
+
+export interface DimensionAssessmentRunStartInput {
+  itemId: string;
+  jobId: string;
+  attempt: number;
+  provider: string;
+  model: string;
+  startedAt: Date;
+}
+
+export interface DimensionAssessmentRunCompleteInput {
+  runId: string;
+  outcome: DimensionAssessmentRunOutcome;
+  inputTokens?: number;
+  outputTokens?: number;
+  /** The full raw dimensions-assessment result -- present only on success. */
+  response?: unknown;
+  errorMessage?: string;
+  completedAt: Date;
+}
+
 export type MatchClassificationRunOutcome = 'succeeded' | 'failed';
 
 export interface MatchClassificationRunStartInput {
@@ -148,6 +170,11 @@ export interface ResearchJobRepository {
     entry: ConditionAssessmentRunStartInput,
   ): Promise<{ runId: string }>;
   completeConditionAssessmentRun(entry: ConditionAssessmentRunCompleteInput): Promise<void>;
+  /** Logged before the request goes to Anthropic, so the Build log can show a pending entry -- see startIdentificationRun. */
+  startDimensionAssessmentRun(
+    entry: DimensionAssessmentRunStartInput,
+  ): Promise<{ runId: string }>;
+  completeDimensionAssessmentRun(entry: DimensionAssessmentRunCompleteInput): Promise<void>;
   markPhotosInspected(photoIds: string[]): Promise<void>;
   transitionItemStatus(itemId: string, status: ItemStatusValue): Promise<void>;
   completeJob(jobId: string, progress: number): Promise<void>;

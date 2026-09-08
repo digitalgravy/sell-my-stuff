@@ -3,6 +3,11 @@ import type {
   ConditionAssessmentResult,
   ConditionField,
 } from '@/server/ai/condition-provider';
+import type {
+  DimensionField,
+  DimensionsAssessmentProvider,
+  DimensionsAssessmentResult,
+} from '@/server/ai/dimensions-provider';
 import {
   identityPhotoConverter,
   type PhotoConverter,
@@ -38,6 +43,8 @@ export interface InspectImagesJobDependencies {
   vision: VisionIdentificationProvider;
   /** Undefined skips condition assessment entirely -- identification alone is still a complete, useful run. */
   condition?: ConditionAssessmentProvider;
+  /** Undefined skips the dimensions/packaging assessment entirely -- see condition's own doc comment above. */
+  dimensions?: DimensionsAssessmentProvider;
   photoConverter?: PhotoConverter;
   maxAttempts?: number;
   leaseMs?: number;
@@ -148,9 +155,41 @@ export async function runInspectImagesJob(
       conditionFacts = buildConditionFacts(conditionOutcome.result);
     }
 
+    // A third, separate vision-model turn -- packaging is its own concern
+    // from identity and condition (see dimensions-provider.ts). Given the
+    // leading identification candidate as context so the model can use real
+    // product knowledge once identity is confident, rather than estimating
+    // from pixels alone. Same non-blocking treatment as condition above --
+    // never gates eBay research.
+    let dimensionsFacts: IdentificationFactInput[] = [];
+    if (dependencies.dimensions) {
+      const dimensionsProvider = dependencies.dimensions;
+      const { runId: dimensionsRunId } = await dependencies.jobs.startDimensionAssessmentRun({
+        itemId: job.itemId,
+        jobId: job.id,
+        attempt: job.attempt,
+        provider: dimensionsProvider.provider,
+        model: dimensionsProvider.model,
+        startedAt: dependencies.now?.() ?? new Date(),
+      });
+      const dimensionsOutcome = await assessDimensionsAndLog(
+        dependencies,
+        dimensionsRunId,
+        photosForIdentification,
+        {
+          manufacturer: leading.manufacturer,
+          family: leading.family,
+          model: leading.model,
+          itemType: leading.itemType,
+        },
+      );
+      dimensionsFacts = buildDimensionsFacts(dimensionsOutcome.result);
+    }
+
     await dependencies.jobs.saveIdentificationFacts(job.itemId, [
       ...identityFacts,
       ...conditionFacts,
+      ...dimensionsFacts,
     ]);
     await dependencies.jobs.markPhotosInspected(
       photos.map((photo) => photo.id),
@@ -290,6 +329,92 @@ function buildConditionFacts(result: ConditionAssessmentResult): IdentificationF
   if (result.openQuestions.length > 0) {
     facts.push({
       field: 'condition.open_questions',
+      value: JSON.stringify(result.openQuestions),
+      confidence: 1,
+      origin: 'image_inference',
+    });
+  }
+
+  return facts;
+}
+
+/**
+ * Calls the dimensions provider and resolves its pending
+ * dimension_assessment_runs row -- same shape and isolation as
+ * assessConditionAndLog.
+ */
+async function assessDimensionsAndLog(
+  dependencies: InspectImagesJobDependencies,
+  runId: string,
+  photos: PhotoForIdentification[],
+  identity: { manufacturer?: string; family?: string; model?: string; itemType?: string },
+) {
+  try {
+    // Guarded by the `if (dependencies.dimensions)` check at the one call
+    // site, but that narrowing doesn't survive being passed into this
+    // separate function -- assert non-null rather than re-checking.
+    const outcome = await dependencies.dimensions!.assess(photos, identity);
+    await dependencies.jobs.completeDimensionAssessmentRun({
+      runId,
+      outcome: 'succeeded',
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+      response: outcome.result,
+      completedAt: dependencies.now?.() ?? new Date(),
+    });
+    return outcome;
+  } catch (error) {
+    await dependencies.jobs.completeDimensionAssessmentRun({
+      runId,
+      outcome: 'failed',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      completedAt: dependencies.now?.() ?? new Date(),
+    });
+    throw error;
+  }
+}
+
+function buildDimensionsFacts(result: DimensionsAssessmentResult): IdentificationFactInput[] {
+  const facts: IdentificationFactInput[] = [];
+
+  const optionalDimensionFields: [string, DimensionField | undefined][] = [
+    ['packaging.length_cm', result.lengthCm],
+    ['packaging.width_cm', result.widthCm],
+    ['packaging.height_cm', result.heightCm],
+    ['packaging.weight_kg', result.weightKg],
+  ];
+  for (const [field, value] of optionalDimensionFields) {
+    if (value === undefined) continue;
+    facts.push({
+      field,
+      value: JSON.stringify(value.value),
+      confidence: value.confidence,
+      origin: 'image_inference',
+      evidence: value.evidence,
+    });
+  }
+
+  facts.push({
+    field: 'packaging.fragility',
+    value: JSON.stringify(result.fragility.grade),
+    confidence: result.fragility.confidence,
+    origin: 'image_inference',
+    evidence: result.fragility.evidence,
+  });
+
+  if (result.specialHandling && result.specialHandling.flags.length > 0) {
+    facts.push({
+      field: 'packaging.special_handling',
+      value: JSON.stringify(result.specialHandling.flags),
+      confidence: result.specialHandling.confidence,
+      origin: 'image_inference',
+      evidence: result.specialHandling.evidence,
+    });
+  }
+
+  if (result.openQuestions.length > 0) {
+    facts.push({
+      field: 'packaging.open_questions',
       value: JSON.stringify(result.openQuestions),
       confidence: 1,
       origin: 'image_inference',

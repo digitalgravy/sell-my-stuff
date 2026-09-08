@@ -411,6 +411,43 @@ export const answerResolutionRuns = pgTable(
   ],
 );
 
+/**
+ * One row per dimensions/packaging-assessment call -- a third, separate
+ * vision-model turn run in the same inspect_images job attempt as
+ * identification and condition (see server/ai/dimensions-provider.ts).
+ * Same pending/resolved and cost-tracking shape as condition_assessment_runs.
+ */
+export const dimensionAssessmentRuns = pgTable(
+  'dimension_assessment_runs',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    jobId: uuid('job_id')
+      .notNull()
+      .references(() => jobs.id, { onDelete: 'cascade' }),
+    attempt: integer('attempt').notNull(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    // Null between the row being written and the response coming back --
+    // see identificationRuns.outcome for why.
+    outcome: identificationRunOutcome('outcome'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    response: jsonb('response'),
+    errorMessage: text('error_message'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('dimension_assessment_runs_item_idx').on(table.itemId, table.createdAt),
+  ],
+);
+
 export const matchClassificationRuns = pgTable(
   'match_classification_runs',
   {

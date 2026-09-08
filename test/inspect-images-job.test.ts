@@ -6,6 +6,11 @@ import type {
   ConditionAssessmentResult,
 } from '../server/ai/condition-provider';
 import type {
+  DimensionsAssessmentProvider,
+  DimensionsAssessmentResult,
+  IdentityContextForDimensions,
+} from '../server/ai/dimensions-provider';
+import type {
   ConvertedPhoto,
   PhotoConverter,
   PhotoForConversion,
@@ -25,6 +30,8 @@ import type {
   ClaimedJob,
   ConditionAssessmentRunCompleteInput,
   ConditionAssessmentRunStartInput,
+  DimensionAssessmentRunCompleteInput,
+  DimensionAssessmentRunStartInput,
   IdentificationFactInput,
   IdentificationRunCompleteInput,
   IdentificationRunStartInput,
@@ -49,12 +56,15 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
   }[] = [];
   runLogs: (IdentificationRunStartInput & IdentificationRunCompleteInput)[] = [];
   conditionRunLogs: (ConditionAssessmentRunStartInput & ConditionAssessmentRunCompleteInput)[] = [];
+  dimensionRunLogs: (DimensionAssessmentRunStartInput & DimensionAssessmentRunCompleteInput)[] = [];
   enqueued: { itemId: string; type: string; idempotencyKey: string }[] = [];
   identityFacts: { field: string; value: string }[] = [];
   private pendingRuns = new Map<string, IdentificationRunStartInput>();
   private pendingConditionRuns = new Map<string, ConditionAssessmentRunStartInput>();
+  private pendingDimensionRuns = new Map<string, DimensionAssessmentRunStartInput>();
   private nextRunId = 1;
   private nextConditionRunId = 1;
+  private nextDimensionRunId = 1;
 
   async claimNextJob(type: string, maxAttempts: number, _leaseMs: number) {
     const index = this.queue.findIndex(
@@ -100,6 +110,21 @@ class MemoryResearchJobRepository implements ResearchJobRepository {
     this.pendingConditionRuns.delete(entry.runId);
     this.conditionRunLogs.push({
       ...(start as ConditionAssessmentRunStartInput),
+      ...entry,
+    });
+  }
+
+  async startDimensionAssessmentRun(entry: DimensionAssessmentRunStartInput) {
+    const runId = `dimension-run-${this.nextDimensionRunId++}`;
+    this.pendingDimensionRuns.set(runId, entry);
+    return { runId };
+  }
+
+  async completeDimensionAssessmentRun(entry: DimensionAssessmentRunCompleteInput) {
+    const start = this.pendingDimensionRuns.get(entry.runId);
+    this.pendingDimensionRuns.delete(entry.runId);
+    this.dimensionRunLogs.push({
+      ...(start as DimensionAssessmentRunStartInput),
       ...entry,
     });
   }
@@ -199,6 +224,28 @@ class StubConditionProvider implements ConditionAssessmentProvider {
     return {
       result: this.result,
       usage: { inputTokens: 111, outputTokens: 22 },
+    };
+  }
+}
+
+class StubDimensionsProvider implements DimensionsAssessmentProvider {
+  readonly provider = 'stub-dimensions-provider';
+  readonly model = 'stub-dimensions-model';
+  received?: PhotoForIdentification[];
+  receivedIdentity?: IdentityContextForDimensions;
+  result: DimensionsAssessmentResult | Error;
+
+  constructor(result: DimensionsAssessmentResult | Error) {
+    this.result = result;
+  }
+
+  async assess(photos: PhotoForIdentification[], identity?: IdentityContextForDimensions) {
+    this.received = photos;
+    this.receivedIdentity = identity;
+    if (this.result instanceof Error) throw this.result;
+    return {
+      result: this.result,
+      usage: { inputTokens: 44, outputTokens: 12 },
     };
   }
 }
@@ -304,6 +351,8 @@ void test('skips condition assessment entirely when no condition provider is con
 
   assert.equal(jobs.conditionRunLogs.length, 0);
   assert.ok(!jobs.savedFacts.some((fact) => fact.field.startsWith('condition.')));
+  assert.equal(jobs.dimensionRunLogs.length, 0);
+  assert.ok(!jobs.savedFacts.some((fact) => fact.field.startsWith('packaging.')));
 });
 
 void test('runs condition assessment alongside identification and saves condition facts', async () => {
@@ -340,6 +389,76 @@ void test('runs condition assessment alongside identification and saves conditio
   assert.equal(gradeFact?.confidence, 0.9);
   const wearFact = jobs.savedFacts.find((fact) => fact.field === 'condition.cosmetic_wear');
   assert.equal(wearFact?.value, JSON.stringify('Light scuffing on the plastic underside'));
+});
+
+void test('runs dimensions assessment alongside identification, passing along the leading identity candidate', async () => {
+  const jobs = new MemoryResearchJobRepository();
+  const objectStore = new MemoryObjectStore();
+  seedItem(jobs, objectStore, 'item-6', 'job-6');
+  const vision = new StubVisionProvider({
+    candidates: [
+      {
+        itemType: 'wireless keyboard',
+        manufacturer: 'Apple',
+        model: 'Magic Keyboard',
+        confidence: 0.92,
+        evidence: 'Apple logo visible',
+        ebaySearchTerms: ['Apple Magic Keyboard'],
+      },
+    ],
+    openQuestions: [],
+    canSearchEbayConfidently: true,
+  });
+  const dimensions = new StubDimensionsProvider({
+    lengthCm: { value: 28, confidence: 0.8, evidence: 'Typical Magic Keyboard length' },
+    widthCm: { value: 11, confidence: 0.8, evidence: 'Typical Magic Keyboard width' },
+    heightCm: { value: 2, confidence: 0.8, evidence: 'Slim profile visible in photos' },
+    weightKg: { value: 0.24, confidence: 0.7, evidence: 'Typical weight for this model' },
+    fragility: { grade: 'moderate', confidence: 0.75, evidence: 'Aluminium shell, no exposed electronics' },
+    specialHandling: { flags: ['anti_static'], confidence: 0.6, evidence: 'Exposed contacts on the underside' },
+    openQuestions: [],
+  });
+
+  const result = await runInspectImagesJob({ jobs, objectStore, vision, dimensions });
+
+  assert.deepEqual(result, { claimed: true, itemId: 'item-6', outcome: 'succeeded' });
+  assert.deepEqual(dimensions.receivedIdentity, {
+    manufacturer: 'Apple',
+    family: undefined,
+    model: 'Magic Keyboard',
+    itemType: 'wireless keyboard',
+  });
+
+  assert.equal(jobs.dimensionRunLogs.length, 1);
+  const dimensionsRun = jobs.dimensionRunLogs[0];
+  assert.equal(dimensionsRun?.outcome, 'succeeded');
+  assert.equal(dimensionsRun?.provider, 'stub-dimensions-provider');
+
+  const lengthFact = jobs.savedFacts.find((fact) => fact.field === 'packaging.length_cm');
+  assert.equal(lengthFact?.value, JSON.stringify(28));
+  const fragilityFact = jobs.savedFacts.find((fact) => fact.field === 'packaging.fragility');
+  assert.equal(fragilityFact?.value, JSON.stringify('moderate'));
+  const specialHandlingFact = jobs.savedFacts.find((fact) => fact.field === 'packaging.special_handling');
+  assert.equal(specialHandlingFact?.value, JSON.stringify(['anti_static']));
+});
+
+void test('a failing dimensions provider fails the whole inspect_images job, same as condition', async () => {
+  const jobs = new MemoryResearchJobRepository();
+  const objectStore = new MemoryObjectStore();
+  seedItem(jobs, objectStore, 'item-7', 'job-7');
+  const vision = new StubVisionProvider({
+    candidates: [
+      { itemType: 'wireless keyboard', confidence: 0.92, evidence: 'Apple logo visible', ebaySearchTerms: ['wireless keyboard'] },
+    ],
+    openQuestions: [],
+    canSearchEbayConfidently: true,
+  });
+  const dimensions = new StubDimensionsProvider(new Error('dimensions provider unavailable'));
+
+  const result = await runInspectImagesJob({ jobs, objectStore, vision, dimensions });
+
+  assert.equal(result.claimed, true);
+  assert.equal(result.claimed && result.outcome, 'failed');
 });
 
 void test('a low-confidence or questioning condition assessment does not block research when identification is confident', async () => {
