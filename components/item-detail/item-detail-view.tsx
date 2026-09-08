@@ -63,6 +63,7 @@ import type {
   ItemDetail,
   ItemDetailFact,
 } from '@/server/items/item-detail-repository';
+import type { DropOffPoint, PostageQuote } from '@/server/postage/parcel2go-client';
 
 import { BuildLog } from './build-log';
 import {
@@ -154,6 +155,8 @@ export function ItemDetailView({
   const [draftValue, setDraftValue] = useState('');
   const [undoingEndpoint, setUndoingEndpoint] = useState<string | null>(null);
   const [regeneratingResearch, setRegeneratingResearch] = useState(false);
+  const [fetchingPostage, setFetchingPostage] = useState(false);
+  const [postageError, setPostageError] = useState<string | null>(null);
   const [confirmingField, setConfirmingField] = useState<string | null>(null);
   const [resolveFactsOpen, setResolveFactsOpen] = useState(false);
   const [resolvingAnswers, setResolvingAnswers] = useState(false);
@@ -247,6 +250,28 @@ export function ItemDetailView({
       .catch(() => undefined)
       .finally(() => setRegeneratingResearch(false));
   }, [apiBase]);
+
+  const fetchPostage = useCallback(() => {
+    if (readOnly) return;
+    setFetchingPostage(true);
+    setPostageError(null);
+    fetch(`${apiBase}/postage/refresh`, { method: 'POST' })
+      .then(async (response) => {
+        if (!response.ok) {
+          const body = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? 'Could not fetch postage options');
+        }
+        return requestItemDetail(apiBase);
+      })
+      .then((data) => {
+        setDetail(data);
+        setStatus('ready');
+      })
+      .catch((error: unknown) => {
+        setPostageError(error instanceof Error ? error.message : 'Could not fetch postage options');
+      })
+      .finally(() => setFetchingPostage(false));
+  }, [apiBase, readOnly]);
 
   const confirmDelete = useCallback(() => {
     setDeleting(true);
@@ -568,6 +593,10 @@ export function ItemDetailView({
                   onCorrectFact={openCorrection}
                   onConfirmFact={confirmFact}
                   confirmingField={confirmingField}
+                  readOnly={readOnly}
+                  fetchingPostage={fetchingPostage}
+                  postageError={postageError}
+                  onFetchPostage={fetchPostage}
                 />
               </TabsContent>
               <TabsContent value="build-log" className="mt-6">
@@ -1132,11 +1161,19 @@ function PackagingTab({
   onCorrectFact,
   onConfirmFact,
   confirmingField,
+  readOnly,
+  fetchingPostage,
+  postageError,
+  onFetchPostage,
 }: {
   detail: ItemDetail;
   onCorrectFact: (field: string, label: string) => void;
   onConfirmFact: (field: string) => void;
   confirmingField: string | null;
+  readOnly: boolean;
+  fetchingPostage: boolean;
+  postageError: string | null;
+  onFetchPostage: () => void;
 }) {
   const packagingFacts = detail.facts.filter((fact) => fact.field.startsWith('packaging.'));
 
@@ -1198,11 +1235,147 @@ function PackagingTab({
         )}
       </section>
 
-      <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
-        <h2 className="text-lg font-semibold tracking-[-0.03em]">Postage</h2>
-        <p className="mt-3.5 text-sm text-muted-foreground">Postage research not built yet.</p>
-      </section>
+      <PostagePanel
+        detail={detail}
+        readOnly={readOnly}
+        fetching={fetchingPostage}
+        error={postageError}
+        onFetch={onFetchPostage}
+      />
     </div>
+  );
+}
+
+function PostagePanel({
+  detail,
+  readOnly,
+  fetching,
+  error,
+  onFetch,
+}: {
+  detail: ItemDetail;
+  readOnly: boolean;
+  fetching: boolean;
+  error: string | null;
+  onFetch: () => void;
+}) {
+  const hasWeight = detail.facts.some((fact) => fact.field === 'packaging.weight_kg');
+  const postage = detail.postage;
+  const quotesByPrice = postage ? [...postage.quotes].sort((a, b) => a.priceGbp - b.priceGbp) : [];
+
+  return (
+    <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-[-0.03em]">Postage</h2>
+        <div className="flex items-center gap-3">
+          {postage ? (
+            <span className="text-xs text-muted-foreground">
+              Last checked {relativeTime(postage.fetchedAt)}
+            </span>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={readOnly || fetching || !hasWeight}
+            onClick={onFetch}
+          >
+            {fetching ? 'Checking…' : postage ? 'Refresh' : 'Get postage options'}
+          </Button>
+        </div>
+      </div>
+
+      {!hasWeight ? (
+        <p className="mt-3.5 text-sm text-muted-foreground">
+          Estimate the item&apos;s weight above first.
+        </p>
+      ) : error ? (
+        <p className="mt-3.5 text-sm text-destructive">{error}</p>
+      ) : !postage ? (
+        <p className="mt-3.5 text-sm text-muted-foreground">
+          Get live pricing and nearby drop-off points from Parcel2Go, based on the estimated
+          weight/dimensions above and your home postcode.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-6">
+          <div>
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Delivery options ({quotesByPrice.length})
+            </h3>
+            <ul className="mt-2 divide-y divide-border/70 text-sm">
+              {quotesByPrice.map((quote, index) => (
+                <PostageQuoteRow key={`${quote.courier}-${quote.service}-${index}`} quote={quote} />
+              ))}
+            </ul>
+          </div>
+
+          {postage.dropOffPoints.length > 0 ? (
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Nearest drop-off points</h3>
+              <ul className="mt-2 divide-y divide-border/70 text-sm">
+                {postage.dropOffPoints.map((point) => (
+                  <DropOffPointRow key={`${point.name}-${point.postcode}`} point={point} />
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <p className="text-xs text-muted-foreground">
+            Prices are Parcel2Go&apos;s own rates (booked and paid through Parcel2Go, then dropped
+            off or collected as shown) -- not necessarily what the courier&apos;s own website or
+            counter would charge directly.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PostageQuoteRow({ quote }: { quote: PostageQuote }) {
+  const deliveryLabel =
+    quote.estDeliveryDateMin && quote.estDeliveryDateMax
+      ? `${new Date(quote.estDeliveryDateMin).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}–${new Date(
+          quote.estDeliveryDateMax,
+        ).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+      : undefined;
+  return (
+    <li className="flex items-center justify-between gap-3 py-2.5">
+      <div>
+        <p className="font-medium">{quote.service}</p>
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+          <span>{quote.courier}</span>
+          <span>·</span>
+          <span>{quote.collection ? 'Home collection' : quote.locker ? 'Locker drop-off' : 'Drop off'}</span>
+          {!quote.printerNeeded ? (
+            <>
+              <span>·</span>
+              <span>Printer not needed</span>
+            </>
+          ) : null}
+          {deliveryLabel ? (
+            <>
+              <span>·</span>
+              <span>Est. {deliveryLabel}</span>
+            </>
+          ) : null}
+        </p>
+      </div>
+      <p className="shrink-0 font-medium tabular-nums">£{quote.priceGbp.toFixed(2)}</p>
+    </li>
+  );
+}
+
+function DropOffPointRow({ point }: { point: DropOffPoint }) {
+  return (
+    <li className="flex items-center justify-between gap-3 py-2.5">
+      <div>
+        <p className="font-medium">{point.name}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {point.address}, {point.postcode} · {point.networks.join(', ')}
+          {point.printInStoreAvailable ? ' · Print in store' : ''}
+        </p>
+      </div>
+      <p className="shrink-0 text-xs tabular-nums text-muted-foreground">{point.distanceMiles} mi</p>
+    </li>
   );
 }
 

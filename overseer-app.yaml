@@ -53,6 +53,11 @@ container:
     # above -- see research-comparable-sales-job.ts's cascade doc comment
     # for why. Port 3200 is that service's own default.
     SELL_BROWSER_MAC_BASE_URL: http://claw.internal:3200
+    # Origin postcode for the Parcel2Go postage-quote integration
+    # (server/postage/parcel2go-client.ts) -- a secret, not a plain env
+    # var like the hostnames above, because it's the owner's real home
+    # postcode and this repo mirrors to a public GitHub remote.
+    HOME_POSTCODE: ${secret:HOME_POSTCODE}
 
 network:
   hostname: sell

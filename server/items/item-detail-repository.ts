@@ -1,6 +1,7 @@
 import type { ProceedsBreakdown } from './fees';
 import type { ActivityState } from './homepage-snapshot';
 import type { PackagingRecommendation } from './packaging';
+import type { DropOffPoint, PostageQuote } from '../postage/parcel2go-client';
 import type { ItemStatusValue } from './research-repository';
 
 export interface ItemDetailPhoto {
@@ -127,6 +128,12 @@ export interface EvidenceInfo {
   note: string;
 }
 
+export interface PostageOptions {
+  quotes: PostageQuote[];
+  dropOffPoints: DropOffPoint[];
+  fetchedAt: string;
+}
+
 export interface ItemDetail {
   id: string;
   status: ItemStatusValue;
@@ -146,6 +153,8 @@ export interface ItemDetail {
   listing?: ListingInfo;
   /** Undefined until the dimensions/packaging AI stage has run and recorded at least a fragility grade. */
   packaging?: PackagingRecommendation;
+  /** Undefined until "Get postage options" has been run at least once -- see fetchPostageOptions. */
+  postage?: PostageOptions;
   /** Undefined until real comparable-sales research exists. */
   evidence?: EvidenceInfo;
   /** Real Anthropic API spend so far (identification + condition assessment + match classification calls), in USD -- 0, not undefined, when nothing has run yet. */
@@ -160,6 +169,7 @@ export type UndoCorrectionOutcome = { ok: true } | { ok: false; reason: string }
 export type RegenerateResearchOutcome = { ok: true } | { ok: false; reason: string };
 export type ResolveFactAnswersOutcome = { ok: true } | { ok: false; reason: string };
 export type SetHeroPhotoOutcome = { ok: true } | { ok: false; reason: string };
+export type FetchPostageOptionsOutcome = { ok: true } | { ok: false; reason: string };
 
 export interface FactAnswerSubmission {
   /** Absent for a free-standing open question with no single fact behind it (identity.open_questions/condition.open_questions) -- see FactAnswerInput. */
@@ -240,4 +250,13 @@ export interface ItemDetailRepository {
    * still reports success if the photo is already the hero.
    */
   setHeroPhoto(itemId: string, photoId: string): Promise<SetHeroPhotoOutcome>;
+  /**
+   * Fetches live postage quotes and nearby drop-off points from Parcel2Go
+   * for this item's estimated weight/dimensions, from the fixed home
+   * postcode (HOME_POSTCODE) -- manual, on-demand action (never automatic
+   * or on a schedule), logged as a Build log entry either way. Refuses if
+   * no weight estimate exists yet (see server/items/packaging.ts) since a
+   * quote needs at least that much to mean anything.
+   */
+  fetchPostageOptions(itemId: string): Promise<FetchPostageOptionsOutcome>;
 }

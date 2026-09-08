@@ -673,6 +673,9 @@ const SIMPLE_EVENT_STAGE: Record<string, { stage: string; type: BuildStep['type'
   identification_retried: { stage: 'Retry identification', type: 'tool' },
   sale_excluded_toggled: { stage: 'Adjust evidence', type: 'policy' },
   fact_confirmed: { stage: 'Confirm a fact', type: 'policy' },
+  hero_photo_changed: { stage: 'Change hero photo', type: 'policy' },
+  postage_quotes_fetched: { stage: 'Get postage options', type: 'tool' },
+  postage_quotes_failed: { stage: 'Get postage options', type: 'tool' },
 };
 
 export function buildStepFromSimpleEvent(event: SimpleEventForBuildStep): BuildStep {
@@ -690,6 +693,15 @@ export function buildStepFromSimpleEvent(event: SimpleEventForBuildStep): BuildS
       label: detail?.excluded ? 'Excluded' : 'Included',
       content: detail?.saleTitle ?? 'A comparable sale was manually toggled.',
     });
+  } else if (event.kind === 'postage_quotes_fetched') {
+    const detail = event.detail as { quotes?: unknown[]; dropOffPoints?: unknown[] } | null;
+    blocks.push({
+      label: 'Result',
+      content: `${detail?.quotes?.length ?? 0} quote(s), ${detail?.dropOffPoints?.length ?? 0} nearby drop-off point(s)`,
+    });
+  } else if (event.kind === 'postage_quotes_failed') {
+    const error = (event.detail as { error?: string } | null)?.error;
+    blocks.push({ label: 'Error', content: error ?? 'Unknown error' });
   } else if (event.kind === 'fact_confirmed') {
     const detail = event.detail as { field?: string; value?: string; previousConfidence?: number } | null;
     blocks.push({
@@ -707,7 +719,10 @@ export function buildStepFromSimpleEvent(event: SimpleEventForBuildStep): BuildS
     stage: render.stage,
     detail: event.summary,
     type: render.type,
-    outcome: event.kind === 'research_failed' ? 'failed' : 'succeeded',
+    outcome:
+      event.kind === 'research_failed' || event.kind === 'postage_quotes_failed'
+        ? 'failed'
+        : 'succeeded',
     durationMs: 0,
     blocks,
   };

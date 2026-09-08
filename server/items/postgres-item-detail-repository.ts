@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import type { FragilityGrade, SpecialHandlingFlag } from '@/lib/fact-fields';
 
@@ -51,10 +51,12 @@ import type {
   CorrectFactOutcome,
   EvidenceInfo,
   FactAnswerSubmission,
+  FetchPostageOptionsOutcome,
   ItemDetail,
   ItemDetailFact,
   ItemDetailPhoto,
   ItemDetailRepository,
+  PostageOptions,
   RegenerateResearchOutcome,
   ResolveFactAnswersOutcome,
   RetryOutcome,
@@ -79,6 +81,7 @@ import {
   startMatchClassificationRun,
 } from './match-classification-runs';
 import { derivePackagingRecommendation, matchInventoryStock } from './packaging';
+import { getDropOffPoints, getPostageQuotes } from '../postage/parcel2go-client';
 import { computeValuation } from './valuation';
 
 const IDENTITY_FACT_FIELDS = new Set([
@@ -335,6 +338,16 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       materials: matchInventoryStock(packagingRecommendation.materials, inventoryRows),
     };
 
+    // The latest successful fetch, if any -- eventRows is already sorted
+    // newest-first by sequence, so the first match is the current one.
+    // No separate table for this: a plain, cheap, synchronous HTTP call
+    // doesn't need the pending/resolved run-table treatment the AI calls
+    // get, so the whole result just lives in the event's own detail.
+    const postageEvent = eventRows.find(
+      (event) => event.kind === ITEM_EVENT_KIND.POSTAGE_QUOTES_FETCHED,
+    );
+    const postage = postageEvent?.detail as PostageOptions | undefined;
+
     // item_events is now the single source of the Build log (see its doc
     // comment in db/schema.ts) -- one query, already in the right order
     // (newest first, by the stable `sequence` assigned at creation).
@@ -553,6 +566,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       }),
       evidence: comparableSaleList.length > 0 ? buildEvidence(comparableSaleList) : undefined,
       packaging,
+      postage,
       pricing,
       proceeds: pricing
         ? computeProceedsBreakdown(pricing.buyItNowPrice, usdToGbp(aiCostUsd))
@@ -1069,6 +1083,74 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       );
       return { ok: true };
     });
+  }
+
+  async fetchPostageOptions(itemId: string): Promise<FetchPostageOptionsOutcome> {
+    const database = getDatabase();
+    const [item] = await database.select({ id: items.id }).from(items).where(eq(items.id, itemId));
+    if (!item) return { ok: false, reason: 'Item not found' };
+
+    const originPostcode = process.env.HOME_POSTCODE;
+    if (!originPostcode) {
+      return { ok: false, reason: 'HOME_POSTCODE is not configured' };
+    }
+
+    const packagingFactRows = await database
+      .select({ field: itemFacts.field, value: itemFacts.value })
+      .from(itemFacts)
+      .where(
+        and(
+          eq(itemFacts.itemId, itemId),
+          inArray(itemFacts.field, [
+            'packaging.weight_kg',
+            'packaging.length_cm',
+            'packaging.width_cm',
+            'packaging.height_cm',
+          ]),
+        ),
+      );
+    const packagingNumber = (field: string): number | undefined => {
+      const raw = packagingFactRows.find((row) => row.field === field)?.value;
+      if (raw === undefined) return undefined;
+      const parsed = parseFactValue(raw);
+      return typeof parsed === 'number' ? parsed : undefined;
+    };
+    const weightKg = packagingNumber('packaging.weight_kg');
+    if (weightKg === undefined) {
+      return {
+        ok: false,
+        reason: 'Estimate the item\'s weight first -- see the Packaging & Delivery tab.',
+      };
+    }
+
+    try {
+      const [quotes, dropOffPoints] = await Promise.all([
+        getPostageQuotes({
+          originPostcode,
+          weightKg,
+          lengthCm: packagingNumber('packaging.length_cm'),
+          widthCm: packagingNumber('packaging.width_cm'),
+          heightCm: packagingNumber('packaging.height_cm'),
+        }),
+        getDropOffPoints(originPostcode),
+      ]);
+      await logItemEvent({
+        itemId,
+        kind: ITEM_EVENT_KIND.POSTAGE_QUOTES_FETCHED,
+        summary: `Fetched ${quotes.length} postage option${quotes.length === 1 ? '' : 's'} from Parcel2Go`,
+        detail: { quotes, dropOffPoints, fetchedAt: new Date().toISOString() },
+      });
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      await logItemEvent({
+        itemId,
+        kind: ITEM_EVENT_KIND.POSTAGE_QUOTES_FAILED,
+        summary: 'Could not fetch postage options from Parcel2Go',
+        detail: { error: message },
+      });
+      return { ok: false, reason: 'Could not fetch postage options right now -- try again shortly.' };
+    }
   }
 }
 
