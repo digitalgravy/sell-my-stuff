@@ -24,6 +24,7 @@ export const ITEM_EVENT_KIND = {
   FACT_CONFIRMED: 'fact_confirmed',
   SALE_EXCLUDED_TOGGLED: 'sale_excluded_toggled',
   ANSWERS_RESOLVED: 'answers_resolved',
+  HERO_PHOTO_CHANGED: 'hero_photo_changed',
 } as const;
 
 export type ItemEventKind = (typeof ITEM_EVENT_KIND)[keyof typeof ITEM_EVENT_KIND];

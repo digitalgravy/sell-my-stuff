@@ -156,6 +156,7 @@ export type ConfirmFactOutcome = { ok: true } | { ok: false; reason: string };
 export type UndoCorrectionOutcome = { ok: true } | { ok: false; reason: string };
 export type RegenerateResearchOutcome = { ok: true } | { ok: false; reason: string };
 export type ResolveFactAnswersOutcome = { ok: true } | { ok: false; reason: string };
+export type SetHeroPhotoOutcome = { ok: true } | { ok: false; reason: string };
 
 export interface FactAnswerSubmission {
   /** Absent for a free-standing open question with no single fact behind it (identity.open_questions/condition.open_questions) -- see FactAnswerInput. */
@@ -229,4 +230,11 @@ export interface ItemDetailRepository {
   reclassifyEvidence(itemId: string): Promise<{ ok: true } | { ok: false; reason: string }>;
   /** Permanently deletes the item and everything under it (photos, facts, jobs, build log — cascade). */
   deleteItem(itemId: string): Promise<{ ok: boolean }>;
+  /**
+   * Makes the given photo the hero (position 0) -- swaps its position with
+   * whichever photo currently holds position 0, so every photo keeps a
+   * unique position and no reordering of the rest is needed. A no-op that
+   * still reports success if the photo is already the hero.
+   */
+  setHeroPhoto(itemId: string, photoId: string): Promise<SetHeroPhotoOutcome>;
 }

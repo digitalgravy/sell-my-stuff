@@ -12,6 +12,7 @@ import {
   ImagePlus,
   MoreVertical,
   RefreshCw,
+  Star,
   Trash2,
 } from 'lucide-react';
 
@@ -359,6 +360,35 @@ export function ItemDetailView({
     [apiBase, readOnly],
   );
 
+  const setHeroPhoto = useCallback(
+    (photoId: string) => {
+      if (!detail) return;
+      const target = detail.photos.find((photo) => photo.id === photoId);
+      if (!target || target.position === 0) return;
+
+      // Optimistic reorder in both modes -- the sample fixture has nothing
+      // to persist to, and the real save happens in the background below.
+      const reordered = [target, ...detail.photos.filter((photo) => photo.id !== photoId)].map(
+        (photo, index) => ({ ...photo, position: index }),
+      );
+      setDetail({ ...detail, photos: reordered });
+      setActivePhoto(0);
+
+      if (readOnly) return;
+      fetch(`${apiBase}/photos/${photoId}/set-hero`, { method: 'POST' })
+        .then((response) => {
+          if (!response.ok) throw new Error();
+          return requestItemDetail(apiBase);
+        })
+        .then((data) => {
+          setDetail(data);
+          setStatus('ready');
+        })
+        .catch(() => undefined);
+    },
+    [apiBase, detail, readOnly],
+  );
+
   const handleAttentionCta = useCallback(
     (task: AttentionTask) => {
       if (task.ctaLabel === 'Correct' && task.field) {
@@ -483,6 +513,7 @@ export function ItemDetailView({
                 photos={detail.photos}
                 activePhoto={activePhoto}
                 onSelect={setActivePhoto}
+                onSetHero={setHeroPhoto}
               />
               <DecisionCard
                 detail={detail}
@@ -639,10 +670,12 @@ function PhotoGallery({
   photos,
   activePhoto,
   onSelect,
+  onSetHero,
 }: {
   photos: ItemDetail['photos'];
   activePhoto: number;
   onSelect: (index: number) => void;
+  onSetHero: (photoId: string) => void;
 }) {
   if (photos.length === 0) {
     return (
@@ -666,20 +699,36 @@ function PhotoGallery({
       </figure>
       {photos.length > 1 ? (
         <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
-          {photos.map((photo, index) => (
-            <button
-              key={photo.id}
-              type="button"
-              onClick={() => onSelect(index)}
-              className={cn(
-                'aspect-square w-20 shrink-0 overflow-hidden rounded-2xl ring-2 ring-transparent transition',
-                index === activePhoto ? 'ring-primary' : 'opacity-70 hover:opacity-100',
-              )}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={photo.url} alt={photo.label} className="h-full w-full object-cover" />
-            </button>
-          ))}
+          {photos.map((photo, index) => {
+            const isHero = photo.position === 0;
+            return (
+              <div key={photo.id} className="group relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onSelect(index)}
+                  className={cn(
+                    'aspect-square w-20 overflow-hidden rounded-2xl ring-2 ring-transparent transition',
+                    index === activePhoto ? 'ring-primary' : 'opacity-70 hover:opacity-100',
+                  )}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photo.url} alt={photo.label} className="h-full w-full object-cover" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSetHero(photo.id)}
+                  title={isHero ? 'Hero photo' : 'Set as hero photo'}
+                  aria-label={isHero ? 'Hero photo' : 'Set as hero photo'}
+                  className={cn(
+                    'absolute right-1 top-1 rounded-full bg-background/80 p-1 backdrop-blur transition',
+                    isHero ? 'text-amber-500' : 'text-muted-foreground opacity-0 group-hover:opacity-100',
+                  )}
+                >
+                  <Star className="size-3.5" fill={isHero ? 'currentColor' : 'none'} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       ) : null}
     </div>

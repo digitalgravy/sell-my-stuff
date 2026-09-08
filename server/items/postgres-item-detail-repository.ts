@@ -54,6 +54,7 @@ import type {
   RegenerateResearchOutcome,
   ResolveFactAnswersOutcome,
   RetryOutcome,
+  SetHeroPhotoOutcome,
   UndoCorrectionOutcome,
 } from './item-detail-repository';
 import {
@@ -945,6 +946,49 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       .where(eq(items.id, itemId))
       .returning({ id: items.id });
     return { ok: result.length > 0 };
+  }
+
+  async setHeroPhoto(itemId: string, photoId: string): Promise<SetHeroPhotoOutcome> {
+    const database = getDatabase();
+    return database.transaction(async (tx) => {
+      const [target] = await tx
+        .select({ id: photos.id, position: photos.position })
+        .from(photos)
+        .where(and(eq(photos.id, photoId), eq(photos.itemId, itemId)));
+      if (!target) return { ok: false, reason: 'Photo not found' };
+      if (target.position === 0) return { ok: true };
+
+      const [current] = await tx
+        .select({ id: photos.id, position: photos.position })
+        .from(photos)
+        .where(and(eq(photos.itemId, itemId), eq(photos.position, 0)));
+
+      // A temporary out-of-range position first -- photos_item_position_unique
+      // is a unique index on (item_id, position), so swapping two rows
+      // straight to each other's position would collide mid-transaction.
+      await tx
+        .update(photos)
+        .set({ position: -1 })
+        .where(eq(photos.id, target.id));
+      if (current) {
+        await tx
+          .update(photos)
+          .set({ position: target.position })
+          .where(eq(photos.id, current.id));
+      }
+      await tx.update(photos).set({ position: 0 }).where(eq(photos.id, target.id));
+
+      await logItemEvent(
+        {
+          itemId,
+          kind: ITEM_EVENT_KIND.HERO_PHOTO_CHANGED,
+          summary: 'Changed the hero photo',
+          detail: { photoId },
+        },
+        tx,
+      );
+      return { ok: true };
+    });
   }
 }
 
