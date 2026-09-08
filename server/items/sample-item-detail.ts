@@ -377,9 +377,9 @@ export function buildSampleItemDetail(): ItemDetail {
     },
     proceeds: {
       saleProceeds: 149.99,
-      marketplaceFeeGbp: 18.0,
+      marketplaceFeeGbp: 0,
       aiResearchCostGbp: 0.03,
-      estimatedNet: 131.96,
+      estimatedNet: 149.96,
     },
     listing: {
       title: 'Sony WH-1000XM4 Wireless Noise Cancelling Headphones - Black',

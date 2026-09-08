@@ -1,18 +1,27 @@
 /**
- * A single, documented approximate eBay UK final-value-fee rate -- there is
- * no fee-rate API integration (BRIEF.md's "Fees and estimated net
- * proceeds" asks to "retrieve current fee rules dynamically where
- * practical", but no such source exists here yet). This is a flat
- * approximation of eBay UK's most-common-category final value fee,
- * deliberately not itemising eBay's real per-category tiers or its small
- * fixed per-order fee -- same "clearly labelled estimate, not a precise
- * figure" precedent as the USD->GBP conversion in server/ai/pricing.ts.
- * Revisit if eBay's published rate changes materially.
+ * eBay UK abolished selling fees for PRIVATE sellers on 1 October 2024:
+ * eligible domestic listings carry no final value fee, no per-order fee,
+ * no regulatory operating fee -- "list for £10, receive £10." The cost
+ * moved to the buyer instead, via a separate Buyer Protection fee added
+ * on top of the item price at checkout; it never comes out of the
+ * seller's proceeds. Confirmed against eBay's own seller-fee-change
+ * announcement and Buyer Protection help pages, 2026-09-08 -- this app
+ * is explicitly a personal decluttering tool (BRIEF.md), not a business
+ * account, which is the one thing that would make this NOT apply.
+ *
+ * The exceptions are narrow and don't fit what this tool is built
+ * around, so they're deliberately not modelled (surfaced as a UI note
+ * instead of guessing at a rate for an edge case): a private seller
+ * still pays a final value fee in a handful of authenticity-guarantee
+ * categories (watches over £100, sneakers over £100, designer handbags
+ * over £500, trading cards over £150), for international sales, and
+ * once past 300 free listings in a month.
  */
-export const EBAY_UK_APPROX_FINAL_VALUE_FEE_RATE = 0.12;
+export const EBAY_UK_PRIVATE_SELLER_FEE_NOTE =
+  'eBay charges private sellers no selling fee on most items since October 2024 (the buyer pays a separate Buyer Protection fee instead, which doesn’t come out of your proceeds) — the one exception is a handful of authenticity-checked categories (watches, sneakers, designer handbags, trading cards) over certain values.';
 
-export function estimateMarketplaceFeeGbp(salePriceGbp: number): number {
-  return Math.round(salePriceGbp * EBAY_UK_APPROX_FINAL_VALUE_FEE_RATE * 100) / 100;
+export function estimateMarketplaceFeeGbp(_salePriceGbp: number): number {
+  return 0;
 }
 
 export interface ProceedsBreakdown {

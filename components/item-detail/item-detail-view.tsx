@@ -56,7 +56,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { PhaseStrip } from '@/components/phase-strip';
 import { getEnumFactField } from '@/lib/fact-fields';
 import { cn } from '@/lib/utils';
-import { EBAY_UK_APPROX_FINAL_VALUE_FEE_RATE } from '@/server/items/fees';
+import { EBAY_UK_PRIVATE_SELLER_FEE_NOTE } from '@/server/items/fees';
 import type {
   AttentionTask,
   ItemDetail,
@@ -766,14 +766,12 @@ function DecisionCard({
           </summary>
           <div className="mt-2 space-y-1 border-l border-border/60 pl-3 text-xs tabular-nums">
             <p>Sale proceeds: £{detail.proceeds.saleProceeds.toFixed(2)}</p>
-            <p>
-              − Marketplace fee (~{Math.round(EBAY_UK_APPROX_FINAL_VALUE_FEE_RATE * 100)}%,
-              approximate): £{detail.proceeds.marketplaceFeeGbp.toFixed(2)}
-            </p>
+            <p>− Marketplace fee: £{detail.proceeds.marketplaceFeeGbp.toFixed(2)}</p>
             <p>− AI research cost: £{detail.proceeds.aiResearchCostGbp.toFixed(2)}</p>
             <p className="font-medium text-foreground">
               = Estimated net: £{detail.proceeds.estimatedNet.toFixed(2)}
             </p>
+            <p className="pt-1 text-muted-foreground/80">{EBAY_UK_PRIVATE_SELLER_FEE_NOTE}</p>
           </div>
         </details>
       ) : null}
