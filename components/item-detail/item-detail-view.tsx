@@ -1173,9 +1173,24 @@ function PackagingTab({
             </p>
             <ul className="divide-y divide-border/70 text-sm">
               {detail.packaging.materials.map((material) => (
-                <li key={material.material} className="flex items-center justify-between py-2.5">
+                <li key={material.material} className="flex items-center justify-between gap-3 py-2.5">
                   <span>{material.material}</span>
-                  <span className="tabular-nums text-muted-foreground">×{material.quantity}</span>
+                  <div className="flex items-center gap-2.5">
+                    {material.status === 'low_stock' ? (
+                      <Badge className="border-transparent bg-warning-soft text-warning">
+                        Low stock{material.quantityOnHand !== undefined ? ` · ${material.quantityOnHand} left` : ''}
+                      </Badge>
+                    ) : material.status === 'not_tracked' ? (
+                      <Link href="/inventory" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
+                        Not tracked
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        In stock{material.quantityOnHand !== undefined ? ` · ${material.quantityOnHand}` : ''}
+                      </span>
+                    )}
+                    <span className="tabular-nums text-muted-foreground">×{material.quantity}</span>
+                  </div>
                 </li>
               ))}
             </ul>

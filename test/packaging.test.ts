@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { derivePackagingRecommendation } from '../server/items/packaging';
+import { derivePackagingRecommendation, matchInventoryStock } from '../server/items/packaging';
 
 void test('derivePackagingRecommendation returns undefined with no fragility grade at all', () => {
   assert.equal(derivePackagingRecommendation({}), undefined);
@@ -68,4 +68,27 @@ void test('derivePackagingRecommendation merges a repeated special-handling flag
   );
   assert.equal(antiStaticEntries.length, 1);
   assert.equal(antiStaticEntries[0]!.quantity, 2);
+});
+
+void test('matchInventoryStock reports not_tracked for a material with no matching inventory row', () => {
+  const [result] = matchInventoryStock([{ material: 'Cardboard box', quantity: 1 }], []);
+  assert.equal(result?.status, 'not_tracked');
+  assert.equal(result?.quantityOnHand, undefined);
+});
+
+void test('matchInventoryStock matches by name case-insensitively and reports in_stock above threshold', () => {
+  const [result] = matchInventoryStock(
+    [{ material: 'cardboard box', quantity: 1 }],
+    [{ name: 'Cardboard Box', quantityOnHand: 10, lowStockThreshold: 2 }],
+  );
+  assert.equal(result?.status, 'in_stock');
+  assert.equal(result?.quantityOnHand, 10);
+});
+
+void test('matchInventoryStock reports low_stock at or below the threshold', () => {
+  const [result] = matchInventoryStock(
+    [{ material: 'Bubble wrap (layers)', quantity: 1 }],
+    [{ name: 'Bubble wrap (layers)', quantityOnHand: 2, lowStockThreshold: 2 }],
+  );
+  assert.equal(result?.status, 'low_stock');
 });

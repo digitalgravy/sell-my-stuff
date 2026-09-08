@@ -270,6 +270,12 @@ export default function Home() {
             >
               Items
             </Link>
+            <Link
+              href="/inventory"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Inventory
+            </Link>
             <button className="text-muted-foreground transition-colors hover:text-foreground">
               Sales
             </button>

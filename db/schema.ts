@@ -59,6 +59,28 @@ export const identificationRunOutcome = pgEnum('identification_run_outcome', [
   'failed',
 ]);
 
+export const inventoryCategory = pgEnum('inventory_category', [
+  'bag',
+  'wrap',
+  'box',
+  'tape',
+  'label',
+  'other',
+]);
+
+export const inventoryUnit = pgEnum('inventory_unit', [
+  'each',
+  'roll',
+  'sheet',
+  'metre',
+]);
+
+export const inventoryAdjustmentReason = pgEnum('inventory_adjustment_reason', [
+  'restock',
+  'used_on_item',
+  'correction',
+]);
+
 export const items = pgTable(
   'items',
   {
@@ -473,4 +495,45 @@ export const matchClassificationRuns = pgTable(
   (table) => [
     index('match_classification_runs_item_idx').on(table.itemId, table.createdAt),
   ],
+);
+
+/**
+ * A packaging supply the owner keeps on hand (anti-static bags, bubble
+ * wrap, boxes, tape, ...) -- not tied to any one item. Stock is only ever
+ * changed through inventoryAdjustments below, which keeps a small audit
+ * trail (matching this app's existing "log the change" ethos) rather than
+ * updating quantityOnHand directly and losing the history.
+ */
+export const inventoryItems = pgTable('inventory_items', {
+  id: uuid('id').primaryKey(),
+  name: text('name').notNull(),
+  category: inventoryCategory('category').notNull(),
+  unit: inventoryUnit('unit').notNull(),
+  quantityOnHand: integer('quantity_on_hand').notNull().default(0),
+  lowStockThreshold: integer('low_stock_threshold').notNull().default(0),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** One row per stock change -- restocking, manual correction, or (once wired up) being used on a specific item. */
+export const inventoryAdjustments = pgTable(
+  'inventory_adjustments',
+  {
+    id: uuid('id').primaryKey(),
+    inventoryItemId: uuid('inventory_item_id')
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: 'cascade' }),
+    delta: integer('delta').notNull(),
+    reason: inventoryAdjustmentReason('reason').notNull(),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index('inventory_adjustments_item_idx').on(table.inventoryItemId, table.createdAt)],
 );

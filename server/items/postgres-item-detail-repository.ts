@@ -11,6 +11,7 @@ import {
   dimensionAssessmentRuns,
   factCorrections,
   identificationRuns,
+  inventoryItems,
   itemEvents,
   itemFacts,
   items,
@@ -77,7 +78,7 @@ import {
   completeMatchClassificationRun,
   startMatchClassificationRun,
 } from './match-classification-runs';
-import { derivePackagingRecommendation } from './packaging';
+import { derivePackagingRecommendation, matchInventoryStock } from './packaging';
 import { computeValuation } from './valuation';
 
 const IDENTITY_FACT_FIELDS = new Set([
@@ -124,6 +125,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       [job],
       comparableSaleRows,
       captureRows,
+      inventoryRows,
     ] = await Promise.all([
       database
         .select({ id: photos.id, position: photos.position })
@@ -265,6 +267,13 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         })
         .from(researchCaptures)
         .where(eq(researchCaptures.importedIntoItemId, itemId)),
+      database
+        .select({
+          name: inventoryItems.name,
+          quantityOnHand: inventoryItems.quantityOnHand,
+          lowStockThreshold: inventoryItems.lowStockThreshold,
+        })
+        .from(inventoryItems),
     ]);
 
     const comparableSaleList: ComparableSale[] = comparableSaleRows.map((row) => ({
@@ -313,7 +322,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       return Array.isArray(value) ? (value as string[]) : undefined;
     };
     const fragilityValue = facts.find((fact) => fact.field === 'packaging.fragility')?.value;
-    const packaging = derivePackagingRecommendation({
+    const packagingRecommendation = derivePackagingRecommendation({
       lengthCm: factNumber('packaging.length_cm'),
       widthCm: factNumber('packaging.width_cm'),
       heightCm: factNumber('packaging.height_cm'),
@@ -321,6 +330,10 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       fragility: typeof fragilityValue === 'string' ? (fragilityValue as FragilityGrade) : undefined,
       specialHandling: factStringArray('packaging.special_handling') as SpecialHandlingFlag[] | undefined,
     });
+    const packaging = packagingRecommendation && {
+      ...packagingRecommendation,
+      materials: matchInventoryStock(packagingRecommendation.materials, inventoryRows),
+    };
 
     // item_events is now the single source of the Build log (see its doc
     // comment in db/schema.ts) -- one query, already in the right order

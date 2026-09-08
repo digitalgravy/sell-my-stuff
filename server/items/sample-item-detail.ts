@@ -424,10 +424,10 @@ export function buildSampleItemDetail(): ItemDetail {
     packaging: {
       boxSizeTier: 'Small box (up to 25×18×10cm)',
       materials: [
-        { material: 'Cardboard box', quantity: 1 },
-        { material: 'Parcel tape', quantity: 1 },
-        { material: 'Packing paper / void fill', quantity: 1 },
-        { material: 'Bubble wrap (layers)', quantity: 1 },
+        { material: 'Cardboard box', quantity: 1, status: 'in_stock', quantityOnHand: 12 },
+        { material: 'Parcel tape', quantity: 1, status: 'in_stock', quantityOnHand: 4 },
+        { material: 'Packing paper / void fill', quantity: 1, status: 'not_tracked' },
+        { material: 'Bubble wrap (layers)', quantity: 1, status: 'low_stock', quantityOnHand: 1 },
       ],
     },
     listing: {

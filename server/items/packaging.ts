@@ -5,9 +5,17 @@ export interface PackagingMaterial {
   quantity: number;
 }
 
+export type MaterialStockStatus = 'in_stock' | 'low_stock' | 'not_tracked';
+
+export interface PackagingMaterialWithStock extends PackagingMaterial {
+  status: MaterialStockStatus;
+  /** Present whenever the material is tracked at all (in_stock or low_stock). */
+  quantityOnHand?: number;
+}
+
 export interface PackagingRecommendation {
   boxSizeTier: string;
-  materials: PackagingMaterial[];
+  materials: PackagingMaterialWithStock[];
 }
 
 export interface PackagingFactsInput {
@@ -79,11 +87,12 @@ function mergeMaterials(materials: PackagingMaterial[]): PackagingMaterial[] {
 
 /**
  * Pure derivation from already-known packaging facts to a recommended box
- * size and materials list -- deliberately inventory-agnostic (stock
- * cross-checking is a separate concern layered on top once inventory
- * exists). Undefined only when there is nothing at all to go on yet (no
- * fragility grade -- the one field the dimensions AI stage always fills in
- * when it runs at all).
+ * size and materials list. Every material starts out `not_tracked` --
+ * matchInventoryStock below is the separate, later step that cross-checks
+ * against real inventory once it exists, keeping this function itself
+ * inventory-agnostic. Undefined only when there is nothing at all to go on
+ * yet (no fragility grade -- the one field the dimensions AI stage always
+ * fills in when it runs at all).
  */
 export function derivePackagingRecommendation(
   facts: PackagingFactsInput,
@@ -108,5 +117,38 @@ export function derivePackagingRecommendation(
     materials.push(...SPECIAL_HANDLING_MATERIALS[flag]);
   }
 
-  return { boxSizeTier, materials: mergeMaterials(materials) };
+  return {
+    boxSizeTier,
+    materials: mergeMaterials(materials).map((material) => ({
+      ...material,
+      status: 'not_tracked' as const,
+    })),
+  };
+}
+
+/** Minimal shape this needs from an inventory row -- kept local so this file has no dependency on server/inventory. */
+export interface InventoryStockLookup {
+  name: string;
+  quantityOnHand: number;
+  lowStockThreshold: number;
+}
+
+/**
+ * Cross-checks a recommended materials list against real inventory,
+ * matched by exact (case-insensitive) name -- deliberately simple string
+ * matching, not fuzzy, so a mismatch fails safe as "not_tracked" rather
+ * than silently pairing the wrong supply.
+ */
+export function matchInventoryStock(
+  materials: PackagingMaterial[],
+  inventory: InventoryStockLookup[],
+): PackagingMaterialWithStock[] {
+  const byName = new Map(inventory.map((item) => [item.name.toLowerCase(), item]));
+  return materials.map((material) => {
+    const match = byName.get(material.material.toLowerCase());
+    if (!match) return { ...material, status: 'not_tracked' };
+    const status: MaterialStockStatus =
+      match.quantityOnHand <= match.lowStockThreshold ? 'low_stock' : 'in_stock';
+    return { ...material, status, quantityOnHand: match.quantityOnHand };
+  });
 }

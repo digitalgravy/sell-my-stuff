@@ -144,6 +144,12 @@ export default function ItemsPage() {
             <Link href="/items" className="text-foreground">
               Items
             </Link>
+            <Link
+              href="/inventory"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Inventory
+            </Link>
             <button className="text-muted-foreground transition-colors hover:text-foreground">
               Sales
             </button>
