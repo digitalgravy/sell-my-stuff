@@ -66,6 +66,15 @@ async function requestInventory(): Promise<InventoryItem[]> {
   return data.inventory;
 }
 
+async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: string };
+    return body.error ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [status, setStatus] = useState<LoadStatus>('loading');
@@ -73,6 +82,13 @@ export default function InventoryPage() {
   const [draft, setDraft] = useState<CreateInventoryItemInput>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!actionError) return;
+    const timeout = setTimeout(() => setActionError(null), 9000);
+    return () => clearTimeout(timeout);
+  }, [actionError]);
 
   const reload = useCallback(() => {
     setStatus('loading');
@@ -101,13 +117,17 @@ export default function InventoryPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(draft),
     })
-      .then((response) => {
-        if (!response.ok) throw new Error();
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await extractErrorMessage(response, 'Could not add this supply.'));
+        }
         setAddOpen(false);
         setDraft(EMPTY_DRAFT);
         reload();
       })
-      .catch(() => undefined)
+      .catch((error: unknown) => {
+        setActionError(error instanceof Error ? error.message : 'Could not add this supply.');
+      })
       .finally(() => setSaving(false));
   }, [draft, reload]);
 
@@ -119,11 +139,15 @@ export default function InventoryPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ delta, reason: delta > 0 ? 'restock' : 'correction' }),
       })
-        .then((response) => {
-          if (!response.ok) throw new Error();
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(await extractErrorMessage(response, 'Could not adjust stock.'));
+          }
           reload();
         })
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          setActionError(error instanceof Error ? error.message : 'Could not adjust stock.');
+        })
         .finally(() => setAdjustingId(null));
     },
     [reload],
@@ -364,6 +388,19 @@ export default function InventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {actionError ? (
+        <output className="fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md items-start justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-lg sm:inset-x-auto sm:right-6">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            className="shrink-0 text-xs font-medium underline-offset-2 hover:underline"
+          >
+            Dismiss
+          </button>
+        </output>
+      ) : null}
     </main>
   );
 }

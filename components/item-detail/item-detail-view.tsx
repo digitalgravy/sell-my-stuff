@@ -109,6 +109,21 @@ async function requestItemDetail(apiBase: string): Promise<ItemDetail> {
   return (await response.json()) as ItemDetail;
 }
 
+/** Every mutating fetch in this file routes its failure through this -- the server's own {error} message when there is one, a fixed fallback otherwise, so a failure is never silently swallowed. */
+async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: string };
+    return body.error ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+interface ActionToast {
+  type: 'success' | 'error';
+  message: string;
+}
+
 function upsertFact(
   facts: ItemDetailFact[],
   field: string,
@@ -160,6 +175,29 @@ export function ItemDetailView({
   const [confirmingField, setConfirmingField] = useState<string | null>(null);
   const [resolveFactsOpen, setResolveFactsOpen] = useState(false);
   const [resolvingAnswers, setResolvingAnswers] = useState(false);
+  const [settingHeroPhotoId, setSettingHeroPhotoId] = useState<string | null>(null);
+  // Tracks which specific attention-task button is mid-request (Retry,
+  // Prepare eBay search) so exactly that button shows a pending state --
+  // without this, clicking it looks like nothing happened until the next
+  // poll, which is the bug this whole block of state exists to fix.
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  // The one shared place every action's outcome is surfaced -- so no
+  // fetch in this file can fail (or succeed at something with no other
+  // visible effect) without the user seeing it.
+  const [actionToast, setActionToast] = useState<ActionToast | null>(null);
+
+  useEffect(() => {
+    if (!actionToast) return;
+    const timeout = setTimeout(
+      () => setActionToast(null),
+      actionToast.type === 'error' ? 9000 : 4000,
+    );
+    return () => clearTimeout(timeout);
+  }, [actionToast]);
+
+  const reportActionError = useCallback((message: string) => {
+    setActionToast({ type: 'error', message });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,51 +243,71 @@ export function ItemDetailView({
 
   const retry = useCallback(() => {
     setRetrying(true);
-    fetch(`${apiBase}/retry`, { method: 'POST' })
-      .then((response) => {
-        if (!response.ok) throw new Error();
+    return fetch(`${apiBase}/retry`, { method: 'POST' })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await extractErrorMessage(response, 'Could not retry identification.'));
+        }
         return requestItemDetail(apiBase);
       })
       .then((data) => {
         setDetail(data);
         setStatus('ready');
+        setActionToast({ type: 'success', message: 'Identification retry started.' });
       })
-      .catch(() => setStatus('error'))
+      .catch((error: unknown) => {
+        reportActionError(error instanceof Error ? error.message : 'Could not retry identification.');
+      })
       .finally(() => setRetrying(false));
-  }, [apiBase]);
+  }, [apiBase, reportActionError]);
 
   const undoStep = useCallback(
     (endpoint: string) => {
       setUndoingEndpoint(endpoint);
       fetch(`${apiBase}/${endpoint}`, { method: 'DELETE' })
-        .then((response) => {
-          if (!response.ok) throw new Error();
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(await extractErrorMessage(response, 'Could not undo this.'));
+          }
           return requestItemDetail(apiBase);
         })
         .then((data) => {
           setDetail(data);
           setStatus('ready');
+          setActionToast({ type: 'success', message: 'Undone.' });
         })
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          reportActionError(error instanceof Error ? error.message : 'Could not undo this.');
+        })
         .finally(() => setUndoingEndpoint(null));
     },
-    [apiBase],
+    [apiBase, reportActionError],
   );
 
   const regenerateResearch = useCallback(() => {
     setRegeneratingResearch(true);
-    fetch(`${apiBase}/research/regenerate`, { method: 'POST' })
-      .then((response) => {
-        if (!response.ok) throw new Error();
+    return fetch(`${apiBase}/research/regenerate`, { method: 'POST' })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await extractErrorMessage(response, 'Could not prepare the eBay search.'));
+        }
         return requestItemDetail(apiBase);
       })
       .then((data) => {
         setDetail(data);
         setStatus('ready');
+        setActionToast({
+          type: 'success',
+          message: 'eBay search preparation started -- check the Build log for progress.',
+        });
       })
-      .catch(() => undefined)
+      .catch((error: unknown) => {
+        reportActionError(
+          error instanceof Error ? error.message : 'Could not prepare the eBay search.',
+        );
+      })
       .finally(() => setRegeneratingResearch(false));
-  }, [apiBase]);
+  }, [apiBase, reportActionError]);
 
   const fetchPostage = useCallback(() => {
     if (readOnly) return;
@@ -276,12 +334,17 @@ export function ItemDetailView({
   const confirmDelete = useCallback(() => {
     setDeleting(true);
     fetch(apiBase, { method: 'DELETE' })
-      .then((response) => {
-        if (!response.ok) throw new Error();
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await extractErrorMessage(response, 'Could not delete this item.'));
+        }
         router.push('/');
       })
-      .catch(() => setDeleting(false));
-  }, [apiBase, router]);
+      .catch((error: unknown) => {
+        reportActionError(error instanceof Error ? error.message : 'Could not delete this item.');
+        setDeleting(false);
+      });
+  }, [apiBase, reportActionError, router]);
 
   const openCorrection = useCallback(
     (field: string, label: string) => {
@@ -312,17 +375,22 @@ export function ItemDetailView({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ field, value: draftValue }),
     })
-      .then((response) => {
-        if (!response.ok) throw new Error();
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await extractErrorMessage(response, 'Could not save this correction.'));
+        }
         return requestItemDetail(apiBase);
       })
       .then((data) => {
         setDetail(data);
         setStatus('ready');
+        setActionToast({ type: 'success', message: 'Correction saved.' });
       })
-      .catch(() => undefined)
+      .catch((error: unknown) => {
+        reportActionError(error instanceof Error ? error.message : 'Could not save this correction.');
+      })
       .finally(() => setCorrecting(null));
-  }, [apiBase, correcting, detail, draftValue, readOnly]);
+  }, [apiBase, correcting, detail, draftValue, readOnly, reportActionError]);
 
   const confirmFact = useCallback(
     (field: string) => {
@@ -344,18 +412,22 @@ export function ItemDetailView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ field }),
       })
-        .then((response) => {
-          if (!response.ok) throw new Error();
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(await extractErrorMessage(response, 'Could not confirm this fact.'));
+          }
           return requestItemDetail(apiBase);
         })
         .then((data) => {
           setDetail(data);
           setStatus('ready');
         })
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          reportActionError(error instanceof Error ? error.message : 'Could not confirm this fact.');
+        })
         .finally(() => setConfirmingField(null));
     },
-    [apiBase, detail, readOnly],
+    [apiBase, detail, readOnly, reportActionError],
   );
 
   const resolveAnswers = useCallback(
@@ -370,19 +442,26 @@ export function ItemDetailView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ answers }),
       })
-        .then((response) => {
-          if (!response.ok) throw new Error();
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(await extractErrorMessage(response, 'Could not save your answers.'));
+          }
           return requestItemDetail(apiBase);
         })
         .then((data) => {
           setDetail(data);
           setStatus('ready');
           setResolveFactsOpen(false);
+          setActionToast({ type: 'success', message: 'Answers saved.' });
         })
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          // Dialog deliberately stays open on failure -- the user's typed
+          // answers are still there to retry, not lost.
+          reportActionError(error instanceof Error ? error.message : 'Could not save your answers.');
+        })
         .finally(() => setResolvingAnswers(false));
     },
-    [apiBase, readOnly],
+    [apiBase, readOnly, reportActionError],
   );
 
   const setHeroPhoto = useCallback(
@@ -400,18 +479,29 @@ export function ItemDetailView({
       setActivePhoto(0);
 
       if (readOnly) return;
+      setSettingHeroPhotoId(photoId);
       fetch(`${apiBase}/photos/${photoId}/set-hero`, { method: 'POST' })
-        .then((response) => {
-          if (!response.ok) throw new Error();
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(await extractErrorMessage(response, 'Could not change the hero photo.'));
+          }
           return requestItemDetail(apiBase);
         })
         .then((data) => {
           setDetail(data);
           setStatus('ready');
         })
-        .catch(() => undefined);
+        .catch((error: unknown) => {
+          reportActionError(
+            error instanceof Error ? error.message : 'Could not change the hero photo.',
+          );
+          // The optimistic reorder above is now wrong -- the save failed,
+          // so re-sync with whatever the server actually has.
+          requestItemDetail(apiBase).then(setDetail).catch(() => undefined);
+        })
+        .finally(() => setSettingHeroPhotoId(null));
     },
-    [apiBase, detail, readOnly],
+    [apiBase, detail, readOnly, reportActionError],
   );
 
   const handleAttentionCta = useCallback(
@@ -421,7 +511,8 @@ export function ItemDetailView({
         return;
       }
       if (task.ctaLabel === 'Retry') {
-        retry();
+        setPendingTaskId(task.id);
+        void retry().finally(() => setPendingTaskId(null));
         return;
       }
       if (task.ctaLabel === 'Search eBay' && task.href) {
@@ -429,7 +520,8 @@ export function ItemDetailView({
         return;
       }
       if (task.ctaLabel === 'Prepare eBay search') {
-        regenerateResearch();
+        setPendingTaskId(task.id);
+        void regenerateResearch().finally(() => setPendingTaskId(null));
         return;
       }
       if (task.ctaLabel === 'Review facts' || task.ctaLabel === 'Add evidence') {
@@ -539,11 +631,13 @@ export function ItemDetailView({
                 activePhoto={activePhoto}
                 onSelect={setActivePhoto}
                 onSetHero={setHeroPhoto}
+                pendingPhotoId={settingHeroPhotoId}
               />
               <DecisionCard
                 detail={detail}
                 onAttentionCta={handleAttentionCta}
                 onJumpToTab={setActiveTab}
+                pendingTaskId={pendingTaskId}
               />
             </section>
 
@@ -579,13 +673,20 @@ export function ItemDetailView({
                   onCorrectFact={openCorrection}
                   onConfirmFact={confirmFact}
                   confirmingField={confirmingField}
+                  pendingTaskId={pendingTaskId}
                 />
               </TabsContent>
               <TabsContent value="listing" className="mt-6">
                 <ListingTab detail={detail} />
               </TabsContent>
               <TabsContent value="evidence" className="mt-6">
-                <EvidenceTab detail={detail} itemId={itemId} readOnly={readOnly} onImported={reload} />
+                <EvidenceTab
+                  detail={detail}
+                  itemId={itemId}
+                  readOnly={readOnly}
+                  onImported={reload}
+                  onActionError={reportActionError}
+                />
               </TabsContent>
               <TabsContent value="packaging" className="mt-6">
                 <PackagingTab
@@ -702,6 +803,26 @@ export function ItemDetailView({
         onSubmit={resolveAnswers}
         submitting={resolvingAnswers}
       />
+
+      {actionToast ? (
+        <output
+          className={cn(
+            'fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm shadow-lg sm:inset-x-auto sm:right-6',
+            actionToast.type === 'error'
+              ? 'border-destructive/30 bg-destructive/10 text-destructive'
+              : 'border-success/30 bg-success-soft text-success',
+          )}
+        >
+          <span>{actionToast.message}</span>
+          <button
+            type="button"
+            onClick={() => setActionToast(null)}
+            className="shrink-0 text-xs font-medium underline-offset-2 hover:underline"
+          >
+            Dismiss
+          </button>
+        </output>
+      ) : null}
     </main>
   );
 }
@@ -711,11 +832,13 @@ function PhotoGallery({
   activePhoto,
   onSelect,
   onSetHero,
+  pendingPhotoId,
 }: {
   photos: ItemDetail['photos'];
   activePhoto: number;
   onSelect: (index: number) => void;
   onSetHero: (photoId: string) => void;
+  pendingPhotoId: string | null;
 }) {
   if (photos.length === 0) {
     return (
@@ -757,14 +880,20 @@ function PhotoGallery({
                 <button
                   type="button"
                   onClick={() => onSetHero(photo.id)}
+                  disabled={pendingPhotoId !== null}
                   title={isHero ? 'Hero photo' : 'Set as hero photo'}
                   aria-label={isHero ? 'Hero photo' : 'Set as hero photo'}
                   className={cn(
-                    'absolute right-1 top-1 rounded-full bg-background/80 p-1 backdrop-blur transition',
+                    'absolute right-1 top-1 rounded-full bg-background/80 p-1 backdrop-blur transition disabled:cursor-not-allowed',
                     isHero ? 'text-amber-500' : 'text-muted-foreground opacity-0 group-hover:opacity-100',
+                    pendingPhotoId === photo.id && 'opacity-100',
                   )}
                 >
-                  <Star className="size-3.5" fill={isHero ? 'currentColor' : 'none'} />
+                  {pendingPhotoId === photo.id ? (
+                    <RefreshCw className="size-3.5 animate-spin" />
+                  ) : (
+                    <Star className="size-3.5" fill={isHero ? 'currentColor' : 'none'} />
+                  )}
                 </button>
               </div>
             );
@@ -779,10 +908,12 @@ function DecisionCard({
   detail,
   onAttentionCta,
   onJumpToTab,
+  pendingTaskId,
 }: {
   detail: ItemDetail;
   onAttentionCta: (task: AttentionTask) => void;
   onJumpToTab: (tab: string) => void;
+  pendingTaskId: string | null;
 }) {
   if (!detail.pricing) {
     // pricing is undefined only when there's no usable evidence -- if
@@ -929,8 +1060,11 @@ function DecisionCard({
 
         <div className="mt-5 flex flex-col gap-2.5">
           {required.length > 0 ? (
-            <Button onClick={() => onAttentionCta(required[0]!)}>
-              {required[0]!.ctaLabel}
+            <Button
+              onClick={() => onAttentionCta(required[0]!)}
+              disabled={pendingTaskId === required[0]!.id}
+            >
+              {pendingTaskId === required[0]!.id ? 'Working…' : required[0]!.ctaLabel}
             </Button>
           ) : null}
           <Button
@@ -952,12 +1086,14 @@ function OverviewTab({
   onCorrectFact,
   onConfirmFact,
   confirmingField,
+  pendingTaskId,
 }: {
   detail: ItemDetail;
   onAttentionCta: (task: AttentionTask) => void;
   onCorrectFact: (field: string, label: string) => void;
   onConfirmFact: (field: string) => void;
   confirmingField: string | null;
+  pendingTaskId: string | null;
 }) {
   const required = detail.attention.filter((task) => task.required);
   const optional = detail.attention.filter((task) => !task.required);
@@ -982,6 +1118,7 @@ function OverviewTab({
                 label="Required"
                 tasks={required}
                 onCta={onAttentionCta}
+                pendingTaskId={pendingTaskId}
               />
             ) : null}
             {optional.length > 0 ? (
@@ -989,6 +1126,7 @@ function OverviewTab({
                 label="Optional"
                 tasks={optional}
                 onCta={onAttentionCta}
+                pendingTaskId={pendingTaskId}
               />
             ) : null}
           </div>
@@ -1383,10 +1521,12 @@ function AttentionGroup({
   label,
   tasks,
   onCta,
+  pendingTaskId,
 }: {
   label: string;
   tasks: AttentionTask[];
   onCta: (task: AttentionTask) => void;
+  pendingTaskId: string | null;
 }) {
   const actionable = (task: AttentionTask) =>
     (task.ctaLabel === 'Correct' && task.field !== undefined) ||
@@ -1421,11 +1561,11 @@ function AttentionGroup({
               <Button
                 variant={actionable(task) ? 'outline' : 'ghost'}
                 size="sm"
-                disabled={!actionable(task)}
+                disabled={!actionable(task) || pendingTaskId === task.id}
                 className="shrink-0"
                 onClick={() => onCta(task)}
               >
-                {task.ctaLabel}
+                {pendingTaskId === task.id ? 'Working…' : task.ctaLabel}
               </Button>
             </div>
           </div>
@@ -1559,11 +1699,13 @@ function EvidenceTab({
   itemId,
   readOnly,
   onImported,
+  onActionError,
 }: {
   detail: ItemDetail;
   itemId: string;
   readOnly: boolean;
   onImported: () => void;
+  onActionError: (message: string) => void;
 }) {
   const [togglingSaleId, setTogglingSaleId] = useState<string | null>(null);
   const [reclassifying, setReclassifying] = useState(false);
@@ -1571,13 +1713,19 @@ function EvidenceTab({
   const reclassifyEvidence = useCallback(() => {
     setReclassifying(true);
     fetch(`/api/items/${itemId}/evidence/reclassify`, { method: 'POST' })
-      .then((response) => {
-        if (!response.ok) throw new Error();
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await extractErrorMessage(response, 'Could not re-check the evidence matches.'));
+        }
         onImported();
       })
-      .catch(() => undefined)
+      .catch((error: unknown) => {
+        onActionError(
+          error instanceof Error ? error.message : 'Could not re-check the evidence matches.',
+        );
+      })
       .finally(() => setReclassifying(false));
-  }, [itemId, onImported]);
+  }, [itemId, onImported, onActionError]);
 
   const toggleSale = useCallback(
     (saleId: string, excluded: boolean) => {
@@ -1587,14 +1735,18 @@ function EvidenceTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ excluded }),
       })
-        .then((response) => {
-          if (!response.ok) throw new Error();
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(await extractErrorMessage(response, 'Could not update this sale.'));
+          }
           onImported();
         })
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          onActionError(error instanceof Error ? error.message : 'Could not update this sale.');
+        })
         .finally(() => setTogglingSaleId(null));
     },
-    [itemId, onImported],
+    [itemId, onImported, onActionError],
   );
 
   if (!detail.evidence) {
@@ -1610,7 +1762,7 @@ function EvidenceTab({
             to save one.
           </p>
         </section>
-        <CaptureImportPanel itemId={itemId} readOnly={readOnly} onImported={onImported} />
+        <CaptureImportPanel itemId={itemId} readOnly={readOnly} onImported={onImported} onActionError={onActionError} />
       </div>
     );
   }
@@ -1693,7 +1845,7 @@ function EvidenceTab({
           </Table>
         </div>
       </section>
-      <CaptureImportPanel itemId={itemId} readOnly={readOnly} onImported={onImported} />
+      <CaptureImportPanel itemId={itemId} readOnly={readOnly} onImported={onImported} onActionError={onActionError} />
     </div>
   );
 }
@@ -1710,10 +1862,12 @@ function CaptureImportPanel({
   itemId,
   readOnly,
   onImported,
+  onActionError,
 }: {
   itemId: string;
   readOnly: boolean;
   onImported: () => void;
+  onActionError: (message: string) => void;
 }) {
   const [captures, setCaptures] = useState<PendingCapture[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -1733,26 +1887,37 @@ function CaptureImportPanel({
     (captureId: string) => {
       setBusyId(captureId);
       fetch(`/api/items/${itemId}/research/captures/${captureId}/import`, { method: 'POST' })
-        .then((response) => {
-          if (!response.ok) throw new Error();
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(await extractErrorMessage(response, 'Could not import this capture.'));
+          }
           loadCaptures();
           onImported();
         })
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          onActionError(error instanceof Error ? error.message : 'Could not import this capture.');
+        })
         .finally(() => setBusyId(null));
     },
-    [itemId, loadCaptures, onImported],
+    [itemId, loadCaptures, onImported, onActionError],
   );
 
   const discardCapture = useCallback(
     (captureId: string) => {
       setBusyId(captureId);
       fetch(`/api/research/captures/${captureId}`, { method: 'DELETE' })
-        .then(() => loadCaptures())
-        .catch(() => undefined)
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(await extractErrorMessage(response, 'Could not discard this capture.'));
+          }
+          loadCaptures();
+        })
+        .catch((error: unknown) => {
+          onActionError(error instanceof Error ? error.message : 'Could not discard this capture.');
+        })
         .finally(() => setBusyId(null));
     },
-    [loadCaptures],
+    [loadCaptures, onActionError],
   );
 
   if (readOnly || captures === null) return null;
