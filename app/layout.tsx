@@ -11,7 +11,10 @@ const inter = Inter({ variable: '--font-inter', subsets: ['latin'] });
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://sell.26fe.uk'),
-  title: 'Sell My Stuff',
+  title: {
+    default: 'Sell My Stuff',
+    template: '%s - Sell My Stuff',
+  },
   description: 'Photograph clutter. Turn it into money.',
   applicationName: 'Sell My Stuff',
   openGraph: {
