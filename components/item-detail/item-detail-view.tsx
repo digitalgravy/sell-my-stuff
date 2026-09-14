@@ -166,6 +166,36 @@ interface Correcting {
   label: string;
 }
 
+const SCROLL_GUARD_MS = 1000;
+const SCROLL_GUARD_POLL_MS = 50;
+
+/**
+ * Snaps window scroll straight back to `y` for SCROLL_GUARD_MS after being
+ * called -- a defensive backstop for a tab switch's
+ * `router.push(..., { scroll: false })`, whose own suppression isn't
+ * reliable on this route (see setActiveTab's comment). Reacts to the
+ * native `scroll` event for an immediate correction, backed by a low-
+ * frequency poll in case a given write doesn't dispatch one (browsers can
+ * suppress/defer scroll events for a backgrounded tab, which a real
+ * foregrounded user never hits, but the poll costs little and closes the
+ * gap regardless). A plain module function, not a hook, so it isn't tied
+ * to a component instance's lifetime -- the [[...tab]] page can remount
+ * mid-guard.
+ */
+function guardScrollPosition(y: number): void {
+  const deadline = performance.now() + SCROLL_GUARD_MS;
+  const correctIfDrifted = () => {
+    if (window.scrollY !== y) window.scrollTo({ top: y, left: 0, behavior: 'instant' });
+  };
+  window.addEventListener('scroll', correctIfDrifted);
+  const poll = () => {
+    correctIfDrifted();
+    if (performance.now() < deadline) setTimeout(poll, SCROLL_GUARD_POLL_MS);
+    else window.removeEventListener('scroll', correctIfDrifted);
+  };
+  setTimeout(poll, SCROLL_GUARD_POLL_MS);
+}
+
 export function ItemDetailView({
   itemId,
   readOnly = false,
@@ -203,6 +233,16 @@ export function ItemDetailView({
         // scroll: false -- this is an in-page tab switch, not a real
         // navigation to a new page; the default scroll-to-top behaviour
         // reads as the page jumping out from under you mid-click.
+        //
+        // scroll: false alone isn't reliable here, though -- confirmed
+        // live, 2026-09-14: Next's own scroll-restoration effect for this
+        // route can still fire (sometimes well) after this push, since
+        // every tab renders through the same [[...tab]] page with no
+        // distinct segment for Next to consume its pending scroll intent
+        // against. guardScrollPosition watches for the page's scroll
+        // position to actually change and snaps it straight back, for a
+        // short window after the click, rather than guessing at timing.
+        guardScrollPosition(window.scrollY);
         router.push(`${tabBasePath}/${next}`, { scroll: false });
       } else {
         setLocalTab(next);
