@@ -106,7 +106,17 @@ export interface ListingInfo {
   title: string;
   description: string;
   marketplace: string;
-  strategyOptions: ListingStrategyOption[];
+  /** eBay category, in readable form (e.g. "Consumer Electronics > Headphones") -- a guess for the owner to confirm, not a numeric category ID. */
+  categoryGuess: string;
+  itemSpecifics: Record<string, string>;
+  conditionDescription: string;
+  dispatchDays: number;
+  returnsAccepted: boolean;
+  returnsDays: number;
+  /** Genuinely unresolved details the draft couldn't settle from facts on hand -- e.g. no confirmed working status. */
+  openQuestions: string[];
+  /** Undefined until pricing exists -- see deriveListingStrategyOptions. */
+  strategyOptions?: ListingStrategyOption[];
   checks: ListingCheck[];
 }
 
@@ -170,6 +180,7 @@ export type RegenerateResearchOutcome = { ok: true } | { ok: false; reason: stri
 export type ResolveFactAnswersOutcome = { ok: true } | { ok: false; reason: string };
 export type SetHeroPhotoOutcome = { ok: true } | { ok: false; reason: string };
 export type FetchPostageOptionsOutcome = { ok: true } | { ok: false; reason: string };
+export type GenerateListingDraftOutcome = { ok: true } | { ok: false; reason: string };
 
 export interface FactAnswerSubmission {
   /** Absent for a free-standing open question with no single fact behind it (identity.open_questions/condition.open_questions) -- see FactAnswerInput. */
@@ -259,4 +270,14 @@ export interface ItemDetailRepository {
    * quote needs at least that much to mean anything.
    */
   fetchPostageOptions(itemId: string): Promise<FetchPostageOptionsOutcome>;
+  /**
+   * Generates (or regenerates) a draft eBay listing -- title, description,
+   * category guess, item specifics, condition description, dispatch/returns
+   * defaults -- from identity/condition/packaging/pricing facts already on
+   * the item, via one Anthropic call (see server/ai/listing-provider.ts).
+   * Refuses if identity hasn't been established yet, since there is nothing
+   * to draft from. Purely a drafting/preview step -- never publishes or
+   * submits anything to eBay.
+   */
+  generateListingDraft(itemId: string): Promise<GenerateListingDraftOutcome>;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -216,6 +216,8 @@ export function ItemDetailView({
   const [regeneratingResearch, setRegeneratingResearch] = useState(false);
   const [fetchingPostage, setFetchingPostage] = useState(false);
   const [postageError, setPostageError] = useState<string | null>(null);
+  const [generatingListing, setGeneratingListing] = useState(false);
+  const [listingError, setListingError] = useState<string | null>(null);
   const [confirmingField, setConfirmingField] = useState<string | null>(null);
   const [resolveFactsOpen, setResolveFactsOpen] = useState(false);
   const [resolvingAnswers, setResolvingAnswers] = useState(false);
@@ -373,6 +375,28 @@ export function ItemDetailView({
         setPostageError(error instanceof Error ? error.message : 'Could not fetch postage options');
       })
       .finally(() => setFetchingPostage(false));
+  }, [apiBase, readOnly]);
+
+  const generateListingDraft = useCallback(() => {
+    if (readOnly) return;
+    setGeneratingListing(true);
+    setListingError(null);
+    fetch(`${apiBase}/listing/generate`, { method: 'POST' })
+      .then(async (response) => {
+        if (!response.ok) {
+          const body = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? 'Could not generate a listing draft');
+        }
+        return requestItemDetail(apiBase);
+      })
+      .then((data) => {
+        setDetail(data);
+        setStatus('ready');
+      })
+      .catch((error: unknown) => {
+        setListingError(error instanceof Error ? error.message : 'Could not generate a listing draft');
+      })
+      .finally(() => setGeneratingListing(false));
   }, [apiBase, readOnly]);
 
   const confirmDelete = useCallback(() => {
@@ -721,7 +745,15 @@ export function ItemDetailView({
                 />
               </TabsContent>
               <TabsContent value="listing" className="mt-6">
-                <ListingTab detail={detail} />
+                <ListingTab
+                  detail={detail}
+                  readOnly={readOnly}
+                  generating={generatingListing}
+                  generateError={listingError}
+                  onGenerate={generateListingDraft}
+                  onConfirmFact={confirmFact}
+                  confirmingField={confirmingField}
+                />
               </TabsContent>
               <TabsContent value="evidence" className="mt-6">
                 <EvidenceTab
@@ -1619,15 +1651,49 @@ function AttentionGroup({
   );
 }
 
-function ListingTab({ detail }: { detail: ItemDetail }) {
+function ListingTab({
+  detail,
+  readOnly,
+  generating,
+  generateError,
+  onGenerate,
+  onConfirmFact,
+  confirmingField,
+}: {
+  detail: ItemDetail;
+  readOnly: boolean;
+  generating: boolean;
+  generateError: string | null;
+  onGenerate: () => void;
+  onConfirmFact: (field: string) => void;
+  confirmingField: string | null;
+}) {
+  const hasIdentity = detail.facts.some((fact) => fact.field.startsWith('identity.'));
+  const conditionDescriptionFact = detail.facts.find(
+    (fact) => fact.field === 'listing.condition_description',
+  );
+  const conditionDescriptionConfirmed = conditionDescriptionFact?.origin === 'user_confirmed';
+
   if (!detail.listing) {
     return (
       <section className="rounded-[1.75rem] border border-dashed border-border/75 bg-muted/30 p-6 text-sm text-muted-foreground sm:p-8">
-        <p className="font-medium text-foreground">Listing drafting not built yet</p>
+        <p className="font-medium text-foreground">No listing draft yet</p>
         <p className="mt-2">
-          Once a listing-drafting stage exists, the selling strategy, listing preview and
-          publishing checks will show here.
+          Generate a draft title, description and category from what&apos;s already been
+          established about this item — nothing publishes automatically.
         </p>
+        {!hasIdentity ? (
+          <p className="mt-3 text-sm text-muted-foreground">Identify the item first.</p>
+        ) : generateError ? (
+          <p className="mt-3 text-sm text-destructive">{generateError}</p>
+        ) : null}
+        <Button
+          className="mt-4"
+          disabled={readOnly || generating || !hasIdentity}
+          onClick={onGenerate}
+        >
+          {generating ? 'Generating…' : 'Generate listing draft'}
+        </Button>
       </section>
     );
   }
@@ -1636,41 +1702,62 @@ function ListingTab({ detail }: { detail: ItemDetail }) {
   const outstandingRequired = listing.checks.filter(
     (check) => check.state === 'required',
   ).length;
+  const itemSpecificsEntries = Object.entries(listing.itemSpecifics);
 
   return (
     <div className="space-y-7">
-      <div>
-        <h2 className="text-lg font-semibold tracking-[-0.03em]">Draft listing</h2>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          The exact commercial proposal — nothing publishes until it&apos;s approved.
-        </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em]">Draft listing</h2>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            The exact commercial proposal — nothing publishes until it&apos;s approved.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={readOnly || generating}
+            onClick={onGenerate}
+          >
+            {generating ? 'Regenerating…' : 'Regenerate draft'}
+          </Button>
+          {generateError ? <p className="text-xs text-destructive">{generateError}</p> : null}
+        </div>
       </div>
 
-      <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
-        <h3 className="text-[15px] font-semibold">Selling strategy</h3>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          {listing.strategyOptions.map((option) => (
-            <div
-              key={option.name}
-              className={cn(
-                'rounded-2xl border p-5',
-                option.recommended ? 'border-primary/50 bg-primary/5' : 'border-border/60',
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold">{option.name}</p>
-                {option.recommended ? (
-                  <Badge className="border-transparent bg-primary/10 text-primary">
-                    Recommended
-                  </Badge>
-                ) : null}
+      {listing.strategyOptions ? (
+        <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
+          <h3 className="text-[15px] font-semibold">Selling strategy</h3>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            {listing.strategyOptions.map((option) => (
+              <div
+                key={option.name}
+                className={cn(
+                  'rounded-2xl border p-5',
+                  option.recommended ? 'border-primary/50 bg-primary/5' : 'border-border/60',
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">{option.name}</p>
+                  {option.recommended ? (
+                    <Badge className="border-transparent bg-primary/10 text-primary">
+                      Recommended
+                    </Badge>
+                  ) : null}
+                </div>
+                <p className="mt-1.5 text-sm tabular-nums">{option.value}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{option.detail}</p>
               </div>
-              <p className="mt-1.5 text-sm tabular-nums">{option.value}</p>
-              <p className="mt-2 text-sm text-muted-foreground">{option.detail}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <section className="rounded-[1.75rem] border border-dashed border-border/75 bg-muted/30 p-6 text-sm text-muted-foreground sm:p-8">
+          Pricing isn&apos;t available yet, so a Buy It Now vs. auction recommendation can&apos;t
+          be made — see the Evidence tab.
+        </section>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">
@@ -1680,6 +1767,64 @@ function ListingTab({ detail }: { detail: ItemDetail }) {
           <p className="mt-2.5 text-sm whitespace-pre-line text-muted-foreground">
             {listing.description}
           </p>
+          <p className="mt-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Category
+          </p>
+          <p className="mt-1 text-sm">{listing.categoryGuess}</p>
+          {itemSpecificsEntries.length > 0 ? (
+            <>
+              <p className="mt-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Item specifics
+              </p>
+              <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                {itemSpecificsEntries.map(([key, value]) => (
+                  <Fragment key={key}>
+                    <dt className="text-muted-foreground">{key}</dt>
+                    <dd>{value}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+            </>
+          ) : null}
+          <div className="mt-4 flex items-start justify-between gap-3 rounded-2xl border border-border/60 bg-muted/30 p-4">
+            <div>
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Condition description
+              </p>
+              <p className="mt-1 text-sm">{listing.conditionDescription}</p>
+            </div>
+            {conditionDescriptionConfirmed ? (
+              <Badge className="shrink-0 border-transparent bg-success-soft text-success">
+                Confirmed
+              </Badge>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                disabled={readOnly || confirmingField === 'listing.condition_description'}
+                onClick={() => onConfirmFact('listing.condition_description')}
+              >
+                {confirmingField === 'listing.condition_description' ? 'Confirming…' : 'Confirm'}
+              </Button>
+            )}
+          </div>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Dispatch within {listing.dispatchDays} day{listing.dispatchDays === 1 ? '' : 's'} ·{' '}
+            {listing.returnsAccepted
+              ? `${listing.returnsDays}-day returns accepted`
+              : 'Returns not accepted'}
+          </p>
+          {listing.openQuestions.length > 0 ? (
+            <div className="mt-4 rounded-2xl border border-warning/40 bg-warning-soft/40 p-4 text-sm text-warning">
+              <p className="font-medium">Open questions</p>
+              <ul className="mt-1.5 list-inside list-disc space-y-1">
+                {listing.openQuestions.map((question) => (
+                  <li key={question}>{question}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
 
         <section className="rounded-[1.75rem] border border-border/75 bg-card p-6 sm:p-8">

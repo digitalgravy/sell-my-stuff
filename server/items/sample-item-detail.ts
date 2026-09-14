@@ -505,6 +505,14 @@ export function buildSampleItemDetail(): ItemDetail {
       description:
         'Used Sony WH-1000XM4 in black. Light wear on the headband padding and ear cushions (see photos). Powers on; noise cancelling and Bluetooth pairing confirmed working in testing. Includes charging cable and soft carry case — retail box not included.',
       marketplace: 'eBay',
+      categoryGuess: 'Sound & Vision > Headphones',
+      itemSpecifics: { Brand: 'Sony', Model: 'WH-1000XM4', Colour: 'Black', Connectivity: 'Bluetooth' },
+      conditionDescription:
+        'Used, very good condition. Light wear on the headband padding and ear cushions. Powers on; noise cancelling and Bluetooth pairing confirmed working.',
+      dispatchDays: 2,
+      returnsAccepted: true,
+      returnsDays: 30,
+      openQuestions: [],
       strategyOptions: [
         {
           name: 'Buy It Now',

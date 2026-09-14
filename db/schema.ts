@@ -52,6 +52,7 @@ export const factOrigin = pgEnum('fact_origin', [
   'web_research',
   'manufacturer_data',
   'user_confirmed',
+  'ai_generated',
 ]);
 
 export const identificationRunOutcome = pgEnum('identification_run_outcome', [
@@ -467,6 +468,40 @@ export const dimensionAssessmentRuns = pgTable(
   },
   (table) => [
     index('dimension_assessment_runs_item_idx').on(table.itemId, table.createdAt),
+  ],
+);
+
+/**
+ * One row per listing-draft-generation call (server/ai/listing-provider.ts)
+ * -- the LLM pass that turns identity/condition/pricing facts already on
+ * the item into a draft eBay listing (title, description, category guess,
+ * item specifics, ...). Same pending/resolved and cost-tracking shape as
+ * answer_resolution_runs; no jobId/attempt since this is triggered by a
+ * direct user action ("Generate listing draft"), not a queued job.
+ */
+export const listingDraftRuns = pgTable(
+  'listing_draft_runs',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    // Null while the request is in flight -- see identificationRuns.outcome.
+    outcome: identificationRunOutcome('outcome'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    response: jsonb('response'),
+    errorMessage: text('error_message'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('listing_draft_runs_item_idx').on(table.itemId, table.createdAt),
   ],
 );
 

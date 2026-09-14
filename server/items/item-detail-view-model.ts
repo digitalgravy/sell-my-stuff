@@ -2,6 +2,7 @@ import { ANSWER_RESOLUTION_SYSTEM_PROMPT } from '@/server/ai/anthropic-answer-re
 import { MATCH_SYSTEM_PROMPT } from '@/server/ai/anthropic-comparable-match-provider';
 import { CONDITION_SYSTEM_PROMPT } from '@/server/ai/anthropic-condition-provider';
 import { DIMENSIONS_SYSTEM_PROMPT } from '@/server/ai/anthropic-dimensions-provider';
+import { LISTING_DRAFT_SYSTEM_PROMPT } from '@/server/ai/anthropic-listing-provider';
 import { SYSTEM_PROMPT } from '@/server/ai/anthropic-vision-provider';
 import { estimateCostUsd } from '@/server/ai/pricing';
 
@@ -25,6 +26,7 @@ export function derivePhases(input: {
   hasEvidence: boolean;
   /** A match-classification run is currently in flight for this item -- sold listings were already found and imported is about to happen once the LLM verdict comes back, not "waiting on you to go search eBay". */
   isCheckingEvidence?: boolean;
+  hasListingDraft: boolean;
 }): PhaseInfo[] {
   const identifiedState = input.hasIdentityFacts
     ? 'done'
@@ -77,8 +79,8 @@ export function derivePhases(input: {
     {
       key: 'draft_ready',
       label: 'Draft ready',
-      detail: 'Listing drafting not built yet',
-      state: 'not_started',
+      detail: input.hasListingDraft ? 'Listing draft generated' : 'Not yet drafted',
+      state: input.hasListingDraft ? 'done' : 'not_started',
     },
     // Auction/Delivered/Funds received: placeholder phases only, same
     // honest "not built yet" pattern as Draft ready -- there is no
@@ -486,6 +488,71 @@ export function buildStepsFromMatchRuns(runs: MatchRunForBuildStep[]): BuildStep
                 label: 'Assistant response',
                 meta: costMeta(run.model, run.inputTokens, run.outputTokens),
                 content: `Classified ${run.listingCount} listing${run.listingCount === 1 ? '' : 's'}.`,
+              },
+            ]
+          : run.outcome === 'failed'
+            ? [{ label: 'Error', content: run.errorMessage ?? 'Unknown error' }]
+            : [{ label: 'Waiting', content: 'No response from Anthropic yet.' }]),
+      ],
+    };
+  });
+}
+
+export interface ListingDraftRunForBuildStep {
+  id: string;
+  sequence: number;
+  provider: string;
+  model: string;
+  outcome?: 'succeeded' | 'failed';
+  inputTokens?: number;
+  outputTokens?: number;
+  response?: unknown;
+  errorMessage?: string;
+  startedAt: string;
+  completedAt?: string;
+}
+
+/**
+ * One build step per listing-draft-generation call -- same pending/resolved
+ * shape as the other single-call run types (match classification, answer
+ * resolution); this is the LLM pass that turns already-known facts into
+ * listing.* copy (server/ai/listing-provider.ts), never the eBay publish
+ * step itself.
+ */
+export function buildStepsFromListingDraftRuns(runs: ListingDraftRunForBuildStep[]): BuildStep[] {
+  return runs.map((run) => {
+    const detail =
+      run.outcome === 'succeeded'
+        ? 'Listing draft generated'
+        : run.outcome === 'failed'
+          ? 'Listing draft · failed'
+          : 'Listing draft · submitted, waiting for a response';
+    return {
+      id: run.id,
+      sequence: run.sequence,
+      stage: 'Draft listing',
+      detail,
+      type: 'llm',
+      outcome: run.outcome ?? 'pending',
+      durationMs:
+        run.outcome === undefined || !run.completedAt
+          ? 0
+          : Math.max(
+              0,
+              new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(),
+            ),
+      blocks: [
+        {
+          label: 'System prompt',
+          meta: `${run.provider} · ${run.model}`,
+          content: LISTING_DRAFT_SYSTEM_PROMPT,
+        },
+        ...(run.outcome === 'succeeded'
+          ? [
+              {
+                label: 'Assistant response',
+                meta: costMeta(run.model, run.inputTokens, run.outputTokens),
+                content: JSON.stringify(run.response, null, 2),
               },
             ]
           : run.outcome === 'failed'

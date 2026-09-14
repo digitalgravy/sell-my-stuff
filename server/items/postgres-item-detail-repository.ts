@@ -16,6 +16,7 @@ import {
   itemFacts,
   items,
   jobs,
+  listingDraftRuns,
   matchClassificationRuns,
   photos,
   researchCaptures,
@@ -23,6 +24,8 @@ import {
 import type { FactAnswerInput } from '@/server/ai/answer-resolution-provider';
 import { getAnthropicAnswerResolutionProvider } from '@/server/ai/anthropic-answer-resolution-provider';
 import { getAnthropicComparableMatchProvider } from '@/server/ai/anthropic-comparable-match-provider';
+import { getAnthropicListingProvider } from '@/server/ai/anthropic-listing-provider';
+import type { ListingDraftInput } from '@/server/ai/listing-provider';
 import { estimateCostUsd, usdToGbp } from '@/server/ai/pricing';
 import { getDatabase } from '@/server/db/client';
 import {
@@ -52,10 +55,13 @@ import type {
   EvidenceInfo,
   FactAnswerSubmission,
   FetchPostageOptionsOutcome,
+  GenerateListingDraftOutcome,
   ItemDetail,
   ItemDetailFact,
   ItemDetailPhoto,
   ItemDetailRepository,
+  ListingInfo,
+  ListingStrategyOption,
   PostageOptions,
   RegenerateResearchOutcome,
   ResolveFactAnswersOutcome,
@@ -70,12 +76,15 @@ import {
   buildStepsFromCorrections,
   buildStepsFromDimensionRuns,
   buildStepsFromImports,
+  buildStepsFromListingDraftRuns,
   buildStepsFromMatchRuns,
   buildStepsFromRuns,
   deriveAttention,
   derivePhases,
   type AnswerResolutionChange,
 } from './item-detail-view-model';
+import { deriveListingChecks, deriveListingStrategyOptions } from './listing';
+import { startListingDraftRun, completeListingDraftRun } from './listing-draft-runs';
 import {
   completeMatchClassificationRun,
   startMatchClassificationRun,
@@ -125,6 +134,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       dimensionRunRows,
       matchRunRows,
       answerResolutionRunRows,
+      listingDraftRunRows,
       [job],
       comparableSaleRows,
       captureRows,
@@ -244,6 +254,21 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         .from(answerResolutionRuns)
         .where(eq(answerResolutionRuns.itemId, itemId)),
       database
+        .select({
+          id: listingDraftRuns.id,
+          provider: listingDraftRuns.provider,
+          model: listingDraftRuns.model,
+          outcome: listingDraftRuns.outcome,
+          inputTokens: listingDraftRuns.inputTokens,
+          outputTokens: listingDraftRuns.outputTokens,
+          response: listingDraftRuns.response,
+          errorMessage: listingDraftRuns.errorMessage,
+          startedAt: listingDraftRuns.startedAt,
+          completedAt: listingDraftRuns.completedAt,
+        })
+        .from(listingDraftRuns)
+        .where(eq(listingDraftRuns.itemId, itemId)),
+      database
         .select({ state: jobs.state, lastError: jobs.lastError })
         .from(jobs)
         .where(and(eq(jobs.itemId, itemId), eq(jobs.type, INSPECT_IMAGES_JOB_TYPE)))
@@ -359,6 +384,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     const dimensionRunById = new Map(dimensionRunRows.map((row) => [row.id, row]));
     const matchRunById = new Map(matchRunRows.map((row) => [row.id, row]));
     const answerResolutionRunById = new Map(answerResolutionRunRows.map((row) => [row.id, row]));
+    const listingDraftRunById = new Map(listingDraftRunRows.map((row) => [row.id, row]));
     const captureById = new Map(captureRows.map((row) => [row.id, row]));
 
     const buildSteps = eventRows.flatMap((event): BuildStep[] => {
@@ -472,6 +498,25 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
             },
           ]);
         }
+        case ITEM_EVENT_KIND.LISTING_DRAFT_RUN: {
+          const run = event.sourceId ? listingDraftRunById.get(event.sourceId) : undefined;
+          if (!run) return [];
+          return buildStepsFromListingDraftRuns([
+            {
+              id: event.id,
+              sequence: event.sequence,
+              provider: run.provider,
+              model: run.model,
+              outcome: run.outcome ?? undefined,
+              inputTokens: run.inputTokens ?? undefined,
+              outputTokens: run.outputTokens ?? undefined,
+              response: run.response ?? undefined,
+              errorMessage: run.errorMessage ?? undefined,
+              startedAt: run.startedAt.toISOString(),
+              completedAt: run.completedAt?.toISOString(),
+            },
+          ]);
+        }
         case ITEM_EVENT_KIND.COMPARABLE_SALES_IMPORTED: {
           const detail = event.detail as { count?: number } | null;
           const capture =
@@ -535,8 +580,17 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       sumRunCosts(conditionRunRows) +
       sumRunCosts(dimensionRunRows) +
       sumRunCosts(matchRunRows) +
-      sumRunCosts(answerResolutionRunRows);
+      sumRunCosts(answerResolutionRunRows) +
+      sumRunCosts(listingDraftRunRows);
     const pricing = computeValuation(comparableSaleList);
+
+    const hasListingDraft = factRows.some((row) => row.field === 'listing.title');
+    const listing = hasListingDraft
+      ? buildListingInfo(facts, {
+          photoCount: photoList.length,
+          strategyOptions: deriveListingStrategyOptions({ pricing }),
+        })
+      : undefined;
 
     return {
       id: item.id,
@@ -555,6 +609,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         hasConditionFacts,
         hasEvidence: comparableSaleList.length > 0,
         isCheckingEvidence: matchRunRows.some((row) => row.outcome === null),
+        hasListingDraft,
       }),
       attention: deriveAttention({
         status: item.status,
@@ -565,6 +620,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
         hasEvidence: comparableSaleList.length > 0,
       }),
       evidence: comparableSaleList.length > 0 ? buildEvidence(comparableSaleList) : undefined,
+      listing,
       packaging,
       postage,
       pricing,
@@ -1152,6 +1208,137 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       return { ok: false, reason: 'Could not fetch postage options right now -- try again shortly.' };
     }
   }
+
+  async generateListingDraft(itemId: string): Promise<GenerateListingDraftOutcome> {
+    const database = getDatabase();
+    const [item] = await database.select({ id: items.id }).from(items).where(eq(items.id, itemId));
+    if (!item) return { ok: false, reason: 'Item not found' };
+
+    const [factRows, comparableSaleRows] = await Promise.all([
+      database
+        .select({ field: itemFacts.field, value: itemFacts.value })
+        .from(itemFacts)
+        .where(eq(itemFacts.itemId, itemId)),
+      database
+        .select({
+          title: comparableSales.title,
+          match: comparableSales.match,
+          soldAt: comparableSales.soldAt,
+          price: comparableSales.price,
+          excluded: comparableSales.excluded,
+        })
+        .from(comparableSales)
+        .where(eq(comparableSales.itemId, itemId)),
+    ]);
+
+    if (!factRows.some((row) => IDENTITY_FACT_FIELDS.has(row.field))) {
+      return { ok: false, reason: 'Identify the item first -- see the Overview tab.' };
+    }
+
+    const factByField = new Map(factRows.map((row) => [row.field, row.value]));
+    const factString = (field: string): string | undefined => {
+      const raw = factByField.get(field);
+      return raw === undefined ? undefined : formatFactValueForPrompt(raw);
+    };
+    const specialHandling = parseStringArray(factByField.get('packaging.special_handling'));
+    const pricing = computeValuation(comparableSaleRows);
+
+    const input: ListingDraftInput = {
+      identity: {
+        itemType: factString('identity.item_type'),
+        manufacturer: factString('identity.manufacturer'),
+        family: factString('identity.family'),
+        model: factString('identity.model'),
+        modelNumbers: factString('identity.model_numbers'),
+        colour: factString('identity.colour'),
+      },
+      condition: {
+        overallGrade: factString('condition.overall_grade'),
+        functionalStatus: factString('condition.functional_status'),
+        cosmeticWear: factString('condition.cosmetic_wear'),
+        defects: factString('condition.defects'),
+        missingParts: factString('condition.missing_parts'),
+      },
+      packaging: {
+        fragility: factString('packaging.fragility'),
+        specialHandling: specialHandling.length > 0 ? specialHandling : undefined,
+      },
+      pricing: pricing
+        ? {
+            buyItNowPrice: pricing.buyItNowPrice,
+            likelyAchievedLow: pricing.likelyAchievedLow,
+            likelyAchievedHigh: pricing.likelyAchievedHigh,
+          }
+        : undefined,
+    };
+
+    const provider = getAnthropicListingProvider();
+    const { runId } = await startListingDraftRun({
+      itemId,
+      provider: provider.provider,
+      model: provider.model,
+    });
+
+    let outcome;
+    try {
+      outcome = await provider.generate(input);
+    } catch (error) {
+      await completeListingDraftRun({
+        runId,
+        outcome: 'failed',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return { ok: false, reason: 'Could not generate a listing draft right now -- try again shortly.' };
+    }
+    await completeListingDraftRun({
+      runId,
+      outcome: 'succeeded',
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+      response: outcome.result,
+    });
+
+    const { result } = outcome;
+    // confidence: 1 across every listing.* fact -- this stage doesn't
+    // grade its own per-field confidence the way image inference does;
+    // genuine uncertainty is instead surfaced through openQuestions, and a
+    // human reviews/confirms the draft before anything publishes (see
+    // the Confirm control on the condition description in ListingTab).
+    await database.transaction(async (tx) => {
+      const upsertFact = async (field: string, rawValue: unknown) => {
+        await tx
+          .insert(itemFacts)
+          .values({
+            id: randomUUID(),
+            itemId,
+            field,
+            value: JSON.stringify(rawValue),
+            confidence: 1,
+            origin: 'ai_generated',
+          })
+          .onConflictDoUpdate({
+            target: [itemFacts.itemId, itemFacts.field],
+            set: {
+              value: sql`excluded.value`,
+              confidence: sql`excluded.confidence`,
+              origin: sql`excluded.origin`,
+              retrievedAt: sql`now()`,
+            },
+          });
+      };
+      await upsertFact('listing.title', result.title);
+      await upsertFact('listing.description', result.description);
+      await upsertFact('listing.category_guess', result.categoryGuess);
+      await upsertFact('listing.item_specifics', result.itemSpecifics);
+      await upsertFact('listing.condition_description', result.conditionDescription);
+      await upsertFact('listing.dispatch_days', result.dispatchDays);
+      await upsertFact('listing.returns_accepted', result.returnsAccepted);
+      await upsertFact('listing.returns_days', result.returnsDays);
+      await upsertFact('listing.open_questions', result.openQuestions);
+    });
+
+    return { ok: true };
+  }
 }
 
 function buildEvidence(rows: readonly ComparableSale[]): EvidenceInfo {
@@ -1164,6 +1351,64 @@ function buildEvidence(rows: readonly ComparableSale[]): EvidenceInfo {
     sales: rows.map((row) => ({ ...row })),
     fairValue,
     note: `Based on ${included.length} comparable sale${included.length === 1 ? '' : 's'} imported from a captured eBay search page.`,
+  };
+}
+
+/**
+ * Assembles ListingInfo purely from already-parsed listing.* facts (the
+ * output of generateListingDraft, stored the same way condition/packaging
+ * facts are) plus the pure derivations in listing.ts -- never talks to the
+ * AI provider itself, so a page load never triggers a fresh call.
+ */
+function buildListingInfo(
+  facts: ItemDetailFact[],
+  input: { photoCount: number; strategyOptions?: ListingStrategyOption[] },
+): ListingInfo {
+  const factValue = (field: string) => facts.find((fact) => fact.field === field)?.value;
+  const factStringValue = (field: string): string => {
+    const value = factValue(field);
+    return typeof value === 'string' ? value : '';
+  };
+
+  const title = factStringValue('listing.title');
+  const itemSpecificsRaw = factValue('listing.item_specifics') as
+    | { brand?: string; model?: string; colour?: string; type?: string }
+    | undefined;
+  const itemSpecificsLabels: [string, string | undefined][] = [
+    ['Brand', itemSpecificsRaw?.brand],
+    ['Model', itemSpecificsRaw?.model],
+    ['Colour', itemSpecificsRaw?.colour],
+    ['Type', itemSpecificsRaw?.type],
+  ];
+  const itemSpecifics = Object.fromEntries(
+    itemSpecificsLabels.filter((entry): entry is [string, string] => !!entry[1]),
+  );
+  const dispatchDaysRaw = factValue('listing.dispatch_days');
+  const returnsAcceptedRaw = factValue('listing.returns_accepted');
+  const returnsDaysRaw = factValue('listing.returns_days');
+  const openQuestionsRaw = factValue('listing.open_questions');
+
+  const conditionDescriptionConfirmed =
+    facts.find((fact) => fact.field === 'listing.condition_description')?.origin === 'user_confirmed';
+
+  return {
+    title,
+    description: factStringValue('listing.description'),
+    marketplace: 'eBay',
+    categoryGuess: factStringValue('listing.category_guess'),
+    itemSpecifics,
+    conditionDescription: factStringValue('listing.condition_description'),
+    dispatchDays: typeof dispatchDaysRaw === 'number' ? dispatchDaysRaw : 2,
+    returnsAccepted: typeof returnsAcceptedRaw === 'boolean' ? returnsAcceptedRaw : true,
+    returnsDays: typeof returnsDaysRaw === 'number' ? returnsDaysRaw : 30,
+    openQuestions: Array.isArray(openQuestionsRaw) ? (openQuestionsRaw as string[]) : [],
+    strategyOptions: input.strategyOptions,
+    checks: deriveListingChecks({
+      title,
+      photoCount: input.photoCount,
+      conditionDescriptionConfirmed,
+      hasWeightEstimate: facts.some((fact) => fact.field === 'packaging.weight_kg'),
+    }),
   };
 }
 

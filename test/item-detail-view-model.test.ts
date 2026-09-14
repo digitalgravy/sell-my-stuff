@@ -14,19 +14,19 @@ import {
 
 void test('derivePhases marks Identified done only when identity facts actually exist', () => {
   assert.equal(
-    derivePhases({ status: 'INBOX', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'INBOX', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false, hasListingDraft: false }).find(
       (p) => p.key === 'identified',
     )?.state,
     'not_started',
   );
   assert.equal(
-    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false, hasListingDraft: false }).find(
       (p) => p.key === 'identified',
     )?.state,
     'pending',
   );
   assert.equal(
-    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false, hasListingDraft: false }).find(
       (p) => p.key === 'identified',
     )?.state,
     'done',
@@ -34,7 +34,7 @@ void test('derivePhases marks Identified done only when identity facts actually 
 });
 
 void test('derivePhases never marks a genuinely unbuilt phase as done or pending', () => {
-  const phases = derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false });
+  const phases = derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false, hasListingDraft: false });
   const unbuilt = phases.filter((p) => p.key !== 'identified' && p.key !== 'researched');
   assert.ok(unbuilt.every((p) => p.state === 'not_started'));
   assert.deepEqual(
@@ -45,19 +45,19 @@ void test('derivePhases never marks a genuinely unbuilt phase as done or pending
 
 void test('derivePhases marks Researched pending while status is RESEARCHING with no evidence yet, done once evidence exists', () => {
   assert.equal(
-    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false, hasListingDraft: false }).find(
       (p) => p.key === 'researched',
     )?.state,
     'pending',
   );
   assert.equal(
-    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: true }).find(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: true, hasListingDraft: false }).find(
       (p) => p.key === 'researched',
     )?.state,
     'done',
   );
   assert.equal(
-    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false, hasListingDraft: false }).find(
       (p) => p.key === 'researched',
     )?.state,
     'not_started',
@@ -74,6 +74,7 @@ void test('derivePhases says "checking sold listings" instead of "ready to searc
     hasConditionFacts: true,
     hasEvidence: false,
     isCheckingEvidence: true,
+    hasListingDraft: false,
   }).find((p) => p.key === 'researched');
   assert.equal(checking?.state, 'pending');
   assert.equal(checking?.detail, 'Checking sold listings against your item');
@@ -84,28 +85,52 @@ void test('derivePhases says "checking sold listings" instead of "ready to searc
     hasConditionFacts: true,
     hasEvidence: false,
     isCheckingEvidence: false,
+    hasListingDraft: false,
   }).find((p) => p.key === 'researched');
   assert.equal(notChecking?.detail, 'Ready to search eBay');
 });
 
 void test('derivePhases marks Assessed done only when condition facts actually exist', () => {
   assert.equal(
-    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'IDENTIFYING', hasIdentityFacts: false, hasConditionFacts: false, hasEvidence: false, hasListingDraft: false }).find(
       (p) => p.key === 'assessed',
     )?.state,
     'pending',
   );
   assert.equal(
-    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: true, hasEvidence: false }).find(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: true, hasEvidence: false, hasListingDraft: false }).find(
       (p) => p.key === 'assessed',
     )?.state,
     'done',
   );
   assert.equal(
-    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false }).find(
+    derivePhases({ status: 'RESEARCHING', hasIdentityFacts: true, hasConditionFacts: false, hasEvidence: false, hasListingDraft: false }).find(
       (p) => p.key === 'assessed',
     )?.state,
     'not_started',
+  );
+});
+
+void test('derivePhases marks Draft ready done only when a listing draft actually exists', () => {
+  assert.equal(
+    derivePhases({
+      status: 'RESEARCHING',
+      hasIdentityFacts: true,
+      hasConditionFacts: true,
+      hasEvidence: true,
+      hasListingDraft: false,
+    }).find((p) => p.key === 'draft_ready')?.state,
+    'not_started',
+  );
+  assert.equal(
+    derivePhases({
+      status: 'RESEARCHING',
+      hasIdentityFacts: true,
+      hasConditionFacts: true,
+      hasEvidence: true,
+      hasListingDraft: true,
+    }).find((p) => p.key === 'draft_ready')?.state,
+    'done',
   );
 });
 
