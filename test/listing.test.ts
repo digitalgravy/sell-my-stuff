@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { deriveListingChecks, deriveListingStrategyOptions } from '../server/items/listing';
+import {
+  deriveListingChecks,
+  deriveListingStrategyOptions,
+  listingHasOutstandingRequiredChecks,
+} from '../server/items/listing';
 import type { PricingAdvice } from '../server/items/item-detail-repository';
 
 const PRICING: PricingAdvice = {
@@ -103,4 +107,22 @@ void test('deriveListingChecks treats the weight/dimensions check as optional, n
     hasWeightEstimate: false,
   });
   assert.equal(checks.find((check) => check.label.includes('weight'))?.state, 'optional');
+});
+
+void test('listingHasOutstandingRequiredChecks is true only while a required check remains', () => {
+  const allSatisfied = deriveListingChecks({
+    title: 'Title',
+    photoCount: 4,
+    conditionDescriptionConfirmed: true,
+    hasWeightEstimate: false,
+  });
+  assert.equal(listingHasOutstandingRequiredChecks(allSatisfied), false);
+
+  const missingPhotos = deriveListingChecks({
+    title: 'Title',
+    photoCount: 1,
+    conditionDescriptionConfirmed: true,
+    hasWeightEstimate: false,
+  });
+  assert.equal(listingHasOutstandingRequiredChecks(missingPhotos), true);
 });

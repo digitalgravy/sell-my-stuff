@@ -68,3 +68,8 @@ export function deriveListingChecks(input: ListingChecksInput): ListingCheck[] {
     },
   ];
 }
+
+/** Server-side re-check before actually publishing -- never trust the client's own read of these checks for the one action with real, live consequences. */
+export function listingHasOutstandingRequiredChecks(checks: ListingCheck[]): boolean {
+  return checks.some((check) => check.state === 'required');
+}

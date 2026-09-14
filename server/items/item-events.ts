@@ -29,6 +29,8 @@ export const ITEM_EVENT_KIND = {
   POSTAGE_QUOTES_FETCHED: 'postage_quotes_fetched',
   POSTAGE_QUOTES_FAILED: 'postage_quotes_failed',
   LISTING_DRAFT_RUN: 'listing_draft_run',
+  LISTING_PUBLISHED: 'listing_published',
+  LISTING_PUBLISH_FAILED: 'listing_publish_failed',
 } as const;
 
 export type ItemEventKind = (typeof ITEM_EVENT_KIND)[keyof typeof ITEM_EVENT_KIND];

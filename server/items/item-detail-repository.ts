@@ -118,6 +118,14 @@ export interface ListingInfo {
   /** Undefined until pricing exists -- see deriveListingStrategyOptions. */
   strategyOptions?: ListingStrategyOption[];
   checks: ListingCheck[];
+  /** Undefined until this listing has actually been published -- see publishListing. Never set except by a real, successful eBay publish. */
+  marketplaceListing?: MarketplaceListingInfo;
+}
+
+export interface MarketplaceListingInfo {
+  marketplace: string;
+  listingUrl: string;
+  publishedAt: string;
 }
 
 export interface ComparableSale {
@@ -181,6 +189,7 @@ export type ResolveFactAnswersOutcome = { ok: true } | { ok: false; reason: stri
 export type SetHeroPhotoOutcome = { ok: true } | { ok: false; reason: string };
 export type FetchPostageOptionsOutcome = { ok: true } | { ok: false; reason: string };
 export type GenerateListingDraftOutcome = { ok: true } | { ok: false; reason: string };
+export type PublishListingOutcome = { ok: true } | { ok: false; reason: string };
 
 export interface FactAnswerSubmission {
   /** Absent for a free-standing open question with no single fact behind it (identity.open_questions/condition.open_questions) -- see FactAnswerInput. */
@@ -280,4 +289,17 @@ export interface ItemDetailRepository {
    * submits anything to eBay.
    */
   generateListingDraft(itemId: string): Promise<GenerateListingDraftOutcome>;
+  /**
+   * Publishes the item's current listing draft live to eBay -- the one
+   * action in this whole app with real, irreversible, financial
+   * consequences (a live marketplace listing, potentially sold, subject
+   * to eBay's fees). Must only ever be called from an explicit,
+   * human-approved "Approve and publish" click on this exact listing,
+   * shown with a distinct confirmation step -- never automatically, never
+   * as a side effect of drafting or regenerating a listing. Re-validates
+   * every required publishing check server-side (title, photo count,
+   * condition-description confirmation) rather than trusting the client,
+   * and refuses if eBay isn't connected yet.
+   */
+  publishListing(itemId: string): Promise<PublishListingOutcome>;
 }

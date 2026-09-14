@@ -82,6 +82,11 @@ export const inventoryAdjustmentReason = pgEnum('inventory_adjustment_reason', [
   'correction',
 ]);
 
+export const marketplaceListingStatus = pgEnum('marketplace_listing_status', [
+  'published',
+  'ended',
+]);
+
 export const items = pgTable(
   'items',
   {
@@ -571,4 +576,54 @@ export const inventoryAdjustments = pgTable(
       .defaultNow(),
   },
   (table) => [index('inventory_adjustments_item_idx').on(table.inventoryItemId, table.createdAt)],
+);
+
+/**
+ * OAuth tokens connecting this app to a marketplace seller account (eBay
+ * first, per BRIEF.md's MarketplacePublisher abstraction) -- single-tenant,
+ * one row per marketplace, refreshed in place as the access token renews.
+ * Written only by server/ebay/ebay-oauth.ts after the owner's own live
+ * OAuth consent; never exposed to the client.
+ */
+export const marketplaceOauthTokens = pgTable('marketplace_oauth_tokens', {
+  marketplace: text('marketplace').primaryKey(),
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+  accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }).notNull(),
+  scope: text('scope').notNull(),
+  connectedAt: timestamp('connected_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A real marketplace listing created for an item -- persists the
+ * marketplace's own identifiers regardless of publishing mechanism (API or
+ * browser), per BRIEF.md's "Persist marketplace IDs regardless of
+ * mechanism." Only ever created by an explicit, human-approved publish
+ * action (see PostgresItemDetailRepository.publishListing) -- never
+ * automatically. The unique index stops the same item being published
+ * twice to the same marketplace even under a double-click/race.
+ */
+export const marketplaceListings = pgTable(
+  'marketplace_listings',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    marketplace: text('marketplace').notNull(),
+    listingId: text('listing_id').notNull(),
+    listingUrl: text('listing_url').notNull(),
+    status: marketplaceListingStatus('status').notNull().default('published'),
+    publishedAt: timestamp('published_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('marketplace_listings_item_idx').on(table.itemId),
+    uniqueIndex('marketplace_listings_item_marketplace_unique').on(
+      table.itemId,
+      table.marketplace,
+    ),
+  ],
 );

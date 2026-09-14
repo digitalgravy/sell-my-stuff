@@ -17,6 +17,7 @@ import {
   items,
   jobs,
   listingDraftRuns,
+  marketplaceListings,
   matchClassificationRuns,
   photos,
   researchCaptures,
@@ -28,10 +29,12 @@ import { getAnthropicListingProvider } from '@/server/ai/anthropic-listing-provi
 import type { ListingDraftInput } from '@/server/ai/listing-provider';
 import { estimateCostUsd, usdToGbp } from '@/server/ai/pricing';
 import { getDatabase } from '@/server/db/client';
+import { isEbayConnected } from '@/server/ebay/ebay-oauth';
 import {
   IDENTIFICATION_CONFIDENCE_THRESHOLD,
   INSPECT_IMAGES_JOB_TYPE,
 } from '@/server/jobs/inspect-images-job';
+import { getEbayApiPublisher } from '@/server/marketplace/ebay-api-publisher';
 import { RESEARCH_COMPARABLE_SALES_JOB_TYPE } from '@/server/jobs/research-comparable-sales-job';
 
 import {
@@ -62,7 +65,9 @@ import type {
   ItemDetailRepository,
   ListingInfo,
   ListingStrategyOption,
+  MarketplaceListingInfo,
   PostageOptions,
+  PublishListingOutcome,
   RegenerateResearchOutcome,
   ResolveFactAnswersOutcome,
   RetryOutcome,
@@ -83,7 +88,7 @@ import {
   derivePhases,
   type AnswerResolutionChange,
 } from './item-detail-view-model';
-import { deriveListingChecks, deriveListingStrategyOptions } from './listing';
+import { deriveListingChecks, deriveListingStrategyOptions, listingHasOutstandingRequiredChecks } from './listing';
 import { startListingDraftRun, completeListingDraftRun } from './listing-draft-runs';
 import {
   completeMatchClassificationRun,
@@ -139,6 +144,7 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
       comparableSaleRows,
       captureRows,
       inventoryRows,
+      [marketplaceListingRow],
     ] = await Promise.all([
       database
         .select({ id: photos.id, position: photos.position })
@@ -302,6 +308,16 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
           lowStockThreshold: inventoryItems.lowStockThreshold,
         })
         .from(inventoryItems),
+      database
+        .select({
+          marketplace: marketplaceListings.marketplace,
+          listingUrl: marketplaceListings.listingUrl,
+          publishedAt: marketplaceListings.publishedAt,
+        })
+        .from(marketplaceListings)
+        .where(eq(marketplaceListings.itemId, itemId))
+        .orderBy(desc(marketplaceListings.publishedAt))
+        .limit(1),
     ]);
 
     const comparableSaleList: ComparableSale[] = comparableSaleRows.map((row) => ({
@@ -585,10 +601,18 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
     const pricing = computeValuation(comparableSaleList);
 
     const hasListingDraft = factRows.some((row) => row.field === 'listing.title');
+    const marketplaceListing: MarketplaceListingInfo | undefined = marketplaceListingRow
+      ? {
+          marketplace: marketplaceListingRow.marketplace,
+          listingUrl: marketplaceListingRow.listingUrl ?? '',
+          publishedAt: marketplaceListingRow.publishedAt.toISOString(),
+        }
+      : undefined;
     const listing = hasListingDraft
       ? buildListingInfo(facts, {
           photoCount: photoList.length,
           strategyOptions: deriveListingStrategyOptions({ pricing }),
+          marketplaceListing,
         })
       : undefined;
 
@@ -1339,6 +1363,125 @@ export class PostgresItemDetailRepository implements ItemDetailRepository {
 
     return { ok: true };
   }
+
+  async publishListing(itemId: string): Promise<PublishListingOutcome> {
+    const database = getDatabase();
+    const [item] = await database.select({ id: items.id }).from(items).where(eq(items.id, itemId));
+    if (!item) return { ok: false, reason: 'Item not found' };
+
+    if (!(await isEbayConnected())) {
+      return { ok: false, reason: 'Connect your eBay account first -- see the Listing tab.' };
+    }
+
+    const [factRows, photoRows, comparableSaleRows] = await Promise.all([
+      database
+        .select({ field: itemFacts.field, value: itemFacts.value, origin: itemFacts.origin })
+        .from(itemFacts)
+        .where(eq(itemFacts.itemId, itemId)),
+      database
+        .select({ id: photos.id })
+        .from(photos)
+        .where(eq(photos.itemId, itemId))
+        .orderBy(asc(photos.position)),
+      database
+        .select({
+          title: comparableSales.title,
+          match: comparableSales.match,
+          soldAt: comparableSales.soldAt,
+          price: comparableSales.price,
+          excluded: comparableSales.excluded,
+        })
+        .from(comparableSales)
+        .where(eq(comparableSales.itemId, itemId)),
+    ]);
+
+    const factByField = new Map(factRows.map((row) => [row.field, row]));
+    const factValue = (field: string): unknown => {
+      const raw = factByField.get(field)?.value;
+      return raw === undefined ? undefined : parseFactValue(raw);
+    };
+    const factStringValue = (field: string): string => {
+      const value = factValue(field);
+      return typeof value === 'string' ? value : '';
+    };
+
+    const title = factStringValue('listing.title');
+    if (!title) return { ok: false, reason: 'Generate a listing draft first.' };
+
+    const conditionDescriptionConfirmed =
+      factByField.get('listing.condition_description')?.origin === 'user_confirmed';
+    const checks = deriveListingChecks({
+      title,
+      photoCount: photoRows.length,
+      conditionDescriptionConfirmed,
+      hasWeightEstimate: factByField.has('packaging.weight_kg'),
+    });
+    if (listingHasOutstandingRequiredChecks(checks)) {
+      return { ok: false, reason: 'Required publishing checks are still outstanding.' };
+    }
+
+    const pricing = computeValuation(comparableSaleRows);
+    if (!pricing) {
+      return { ok: false, reason: 'No pricing yet -- import comparable sales first.' };
+    }
+
+    const conditionGrade = factStringValue('condition.overall_grade');
+    if (!conditionGrade) {
+      return { ok: false, reason: 'No condition grade recorded for this item.' };
+    }
+
+    const appOrigin = process.env.APP_ORIGIN;
+    if (!appOrigin) {
+      return { ok: false, reason: 'APP_ORIGIN is not configured' };
+    }
+    const itemSpecifics =
+      (factValue('listing.item_specifics') as
+        | { brand?: string; model?: string; colour?: string; type?: string }
+        | undefined) ?? {};
+
+    const outcome = await getEbayApiPublisher().publish({
+      sku: itemId,
+      title,
+      description: factStringValue('listing.description'),
+      conditionGrade,
+      conditionDescription: factStringValue('listing.condition_description'),
+      itemSpecifics,
+      priceGbp: pricing.buyItNowPrice,
+      photoUrls: photoRows.map((photo) => `${appOrigin}/api/items/${itemId}/photos/${photo.id}`),
+    });
+
+    if (!outcome.ok) {
+      await logItemEvent({
+        itemId,
+        kind: ITEM_EVENT_KIND.LISTING_PUBLISH_FAILED,
+        summary: 'Could not publish this listing to eBay',
+        detail: { error: outcome.reason },
+      });
+      return { ok: false, reason: outcome.reason };
+    }
+
+    await database.transaction(async (tx) => {
+      await tx.insert(marketplaceListings).values({
+        id: randomUUID(),
+        itemId,
+        marketplace: 'ebay',
+        listingId: outcome.listingId,
+        listingUrl: outcome.listingUrl,
+      });
+      await tx.update(items).set({ status: 'LIVE' }).where(eq(items.id, itemId));
+      await logItemEvent(
+        {
+          itemId,
+          kind: ITEM_EVENT_KIND.LISTING_PUBLISHED,
+          summary: 'Published to eBay',
+          detail: { listingId: outcome.listingId, listingUrl: outcome.listingUrl },
+        },
+        tx,
+      );
+    });
+
+    return { ok: true };
+  }
 }
 
 function buildEvidence(rows: readonly ComparableSale[]): EvidenceInfo {
@@ -1362,7 +1505,11 @@ function buildEvidence(rows: readonly ComparableSale[]): EvidenceInfo {
  */
 function buildListingInfo(
   facts: ItemDetailFact[],
-  input: { photoCount: number; strategyOptions?: ListingStrategyOption[] },
+  input: {
+    photoCount: number;
+    strategyOptions?: ListingStrategyOption[];
+    marketplaceListing?: MarketplaceListingInfo;
+  },
 ): ListingInfo {
   const factValue = (field: string) => facts.find((fact) => fact.field === field)?.value;
   const factStringValue = (field: string): string => {
@@ -1409,6 +1556,7 @@ function buildListingInfo(
       conditionDescriptionConfirmed,
       hasWeightEstimate: facts.some((fact) => fact.field === 'packaging.weight_kg'),
     }),
+    marketplaceListing: input.marketplaceListing,
   };
 }
 

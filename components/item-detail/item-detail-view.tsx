@@ -28,7 +28,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -139,6 +139,11 @@ async function extractErrorMessage(response: Response, fallback: string): Promis
 interface ActionToast {
   type: 'success' | 'error';
   message: string;
+}
+
+interface EbayStatus {
+  configured: boolean;
+  connected: boolean;
 }
 
 function upsertFact(
@@ -258,6 +263,10 @@ export function ItemDetailView({
   const [postageError, setPostageError] = useState<string | null>(null);
   const [generatingListing, setGeneratingListing] = useState(false);
   const [listingError, setListingError] = useState<string | null>(null);
+  const [ebayStatus, setEbayStatus] = useState<EbayStatus | null>(null);
+  const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const [confirmingField, setConfirmingField] = useState<string | null>(null);
   const [resolveFactsOpen, setResolveFactsOpen] = useState(false);
   const [resolvingAnswers, setResolvingAnswers] = useState(false);
@@ -314,6 +323,14 @@ export function ItemDetailView({
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [apiBase]);
+
+  useEffect(() => {
+    if (readOnly) return;
+    fetch('/api/ebay/status')
+      .then((response) => (response.ok ? (response.json() as Promise<EbayStatus>) : null))
+      .then((data) => setEbayStatus(data))
+      .catch(() => undefined);
+  }, [readOnly]);
 
   const reload = useCallback(() => {
     setStatus('loading');
@@ -437,6 +454,30 @@ export function ItemDetailView({
         setListingError(error instanceof Error ? error.message : 'Could not generate a listing draft');
       })
       .finally(() => setGeneratingListing(false));
+  }, [apiBase, readOnly]);
+
+  const publishListing = useCallback(() => {
+    if (readOnly) return;
+    setPublishing(true);
+    setPublishError(null);
+    fetch(`${apiBase}/listing/publish`, { method: 'POST' })
+      .then(async (response) => {
+        if (!response.ok) {
+          const body = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? 'Could not publish this listing');
+        }
+        return requestItemDetail(apiBase);
+      })
+      .then((data) => {
+        setDetail(data);
+        setStatus('ready');
+        setPublishConfirmOpen(false);
+        setActionToast({ type: 'success', message: 'Published to eBay.' });
+      })
+      .catch((error: unknown) => {
+        setPublishError(error instanceof Error ? error.message : 'Could not publish this listing');
+      })
+      .finally(() => setPublishing(false));
   }, [apiBase, readOnly]);
 
   const confirmDelete = useCallback(() => {
@@ -793,6 +834,12 @@ export function ItemDetailView({
                   onGenerate={generateListingDraft}
                   onConfirmFact={confirmFact}
                   confirmingField={confirmingField}
+                  ebayStatus={ebayStatus}
+                  publishConfirmOpen={publishConfirmOpen}
+                  onPublishConfirmOpenChange={setPublishConfirmOpen}
+                  publishing={publishing}
+                  publishError={publishError}
+                  onPublish={publishListing}
                 />
               </TabsContent>
               <TabsContent value="evidence" className="mt-6">
@@ -1699,6 +1746,12 @@ function ListingTab({
   onGenerate,
   onConfirmFact,
   confirmingField,
+  ebayStatus,
+  publishConfirmOpen,
+  onPublishConfirmOpenChange,
+  publishing,
+  publishError,
+  onPublish,
 }: {
   detail: ItemDetail;
   readOnly: boolean;
@@ -1707,6 +1760,12 @@ function ListingTab({
   onGenerate: () => void;
   onConfirmFact: (field: string) => void;
   confirmingField: string | null;
+  ebayStatus: EbayStatus | null;
+  publishConfirmOpen: boolean;
+  onPublishConfirmOpenChange: (open: boolean) => void;
+  publishing: boolean;
+  publishError: string | null;
+  onPublish: () => void;
 }) {
   const hasIdentity = detail.facts.some((fact) => fact.field.startsWith('identity.'));
   const conditionDescriptionFact = detail.facts.find(
@@ -1900,19 +1959,74 @@ function ListingTab({
             </div>
           ) : null}
 
-          <div className="mt-5 space-y-2">
-            <Button className="w-full" disabled>
-              Approve and publish
-            </Button>
-            <Button variant="outline" className="w-full" disabled>
-              Approve and schedule
-            </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              Publishing isn&apos;t built yet.
-            </p>
-          </div>
+          {listing.marketplaceListing ? (
+            <div className="mt-5 space-y-2">
+              <div className="flex items-center gap-2 rounded-2xl border border-success/40 bg-success-soft/40 p-4 text-sm text-success">
+                <Check className="size-4 shrink-0" />
+                Published to eBay
+              </div>
+              <a
+                href={listing.marketplaceListing.listingUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={cn(buttonVariants({ variant: 'outline' }), 'w-full')}
+              >
+                View live listing
+              </a>
+            </div>
+          ) : (
+            <div className="mt-5 space-y-2">
+              {ebayStatus && !ebayStatus.connected ? (
+                <p className="text-center text-xs text-muted-foreground">
+                  {ebayStatus.configured ? (
+                    <>
+                      eBay isn&apos;t connected —{' '}
+                      <Link href="/api/ebay/oauth/start" className="text-primary underline">
+                        connect your account
+                      </Link>
+                      .
+                    </>
+                  ) : (
+                    'eBay publishing isn’t configured yet.'
+                  )}
+                </p>
+              ) : null}
+              <Button
+                className="w-full"
+                disabled={readOnly || outstandingRequired > 0 || !ebayStatus?.connected}
+                onClick={() => onPublishConfirmOpenChange(true)}
+              >
+                Approve and publish
+              </Button>
+              <Button variant="outline" className="w-full" disabled>
+                Approve and schedule
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                Scheduling isn&apos;t built yet — publishing goes live immediately.
+              </p>
+            </div>
+          )}
         </section>
       </div>
+
+      <AlertDialog open={publishConfirmOpen} onOpenChange={onPublishConfirmOpenChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Publish this listing to eBay?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &ldquo;{listing.title}&rdquo; goes live on eBay immediately, for real — not a
+              preview. This can&apos;t be undone from here.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {publishError ? <p className="text-sm text-destructive">{publishError}</p> : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={publishing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onPublish} disabled={publishing}>
+              {publishing ? 'Publishing…' : 'Publish to eBay'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
