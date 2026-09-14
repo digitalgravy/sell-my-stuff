@@ -200,7 +200,10 @@ export function ItemDetailView({
     (tab: string) => {
       const next = normalizeTab(tab);
       if (tabBasePath) {
-        router.push(`${tabBasePath}/${next}`);
+        // scroll: false -- this is an in-page tab switch, not a real
+        // navigation to a new page; the default scroll-to-top behaviour
+        // reads as the page jumping out from under you mid-click.
+        router.push(`${tabBasePath}/${next}`, { scroll: false });
       } else {
         setLocalTab(next);
       }
