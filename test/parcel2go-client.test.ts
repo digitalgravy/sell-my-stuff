@@ -64,6 +64,35 @@ void test('getPostageQuotes maps tags into dropOff/locker/collection/printerNeed
   }
 });
 
+void test('getPostageQuotes rounds fractional dimensions up to whole centimetres', async () => {
+  // Parcel2Go's quote endpoint 400s on a decimal length/width/height
+  // (confirmed live against the real API, 2026-09-14) -- the dimensions
+  // AI stage estimates in fractional cm, so this must round before
+  // building the query, not just pass the estimate straight through.
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (url: string | URL) => {
+    calls.push(String(url));
+    return jsonResponse({ result: [] });
+  }) as typeof fetch;
+
+  try {
+    await getPostageQuotes({
+      originPostcode: 'OX12 0DD',
+      weightKg: 0.345,
+      lengthCm: 8.4,
+      widthCm: 8.4,
+      heightCm: 8.4,
+    });
+    const url = new URL(calls[0]!, 'https://example.invalid');
+    assert.equal(url.searchParams.get('length'), '9');
+    assert.equal(url.searchParams.get('width'), '9');
+    assert.equal(url.searchParams.get('height'), '9');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 void test('getPostageQuotes throws a clear error on a non-ok response', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => jsonResponse({}, false, 502)) as typeof fetch;

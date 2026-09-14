@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Archive,
   ArrowLeft,
@@ -100,6 +100,23 @@ function extractOpenQuestions(
   return value.filter((entry): entry is string => typeof entry === 'string').map((text) => ({ source, text }));
 }
 
+// Keep in sync with the TabsTrigger/TabsContent value props below.
+const TAB_VALUES = ['overview', 'listing', 'evidence', 'packaging', 'build-log'] as const;
+type TabValue = (typeof TAB_VALUES)[number];
+
+function normalizeTab(value: string): TabValue {
+  return (TAB_VALUES as readonly string[]).includes(value) ? (value as TabValue) : 'overview';
+}
+
+/** Reads the tab segment straight after `basePath` in the current URL, e.g. "/items/{id}/evidence" -> "evidence". Undefined (falls back to "overview") for the bare base path or an unrecognised segment. */
+function deriveTabFromPathname(pathname: string, basePath: string): TabValue | undefined {
+  if (pathname === basePath) return undefined;
+  const prefix = `${basePath}/`;
+  if (!pathname.startsWith(prefix)) return undefined;
+  const segment = pathname.slice(prefix.length).split('/')[0]!;
+  return (TAB_VALUES as readonly string[]).includes(segment) ? (segment as TabValue) : undefined;
+}
+
 class ItemNotFoundError extends Error {}
 
 async function requestItemDetail(apiBase: string): Promise<ItemDetail> {
@@ -152,12 +169,22 @@ interface Correcting {
 export function ItemDetailView({
   itemId,
   readOnly = false,
+  tabBasePath,
 }: {
   itemId: string;
   readOnly?: boolean;
+  /**
+   * When given (the real item page, not the read-only /items/sample
+   * fixture), the active tab is derived from the URL below this path
+   * (e.g. "{tabBasePath}/evidence") and switching tabs pushes a new URL
+   * instead of just setting local state -- so tabs are bookmarkable and
+   * back/forward moves between them, per the owner's request.
+   */
+  tabBasePath?: string;
 }) {
   const apiBase = `/api/items/${itemId}`;
   const router = useRouter();
+  const pathname = usePathname();
 
   const [detail, setDetail] = useState<ItemDetail | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
@@ -165,7 +192,21 @@ export function ItemDetailView({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [activePhoto, setActivePhoto] = useState(0);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [localTab, setLocalTab] = useState<TabValue>('overview');
+  const activeTab = tabBasePath
+    ? (deriveTabFromPathname(pathname, tabBasePath) ?? 'overview')
+    : localTab;
+  const setActiveTab = useCallback(
+    (tab: string) => {
+      const next = normalizeTab(tab);
+      if (tabBasePath) {
+        router.push(`${tabBasePath}/${next}`);
+      } else {
+        setLocalTab(next);
+      }
+    },
+    [tabBasePath, router],
+  );
   const [correcting, setCorrecting] = useState<Correcting | null>(null);
   const [draftValue, setDraftValue] = useState('');
   const [undoingEndpoint, setUndoingEndpoint] = useState<string | null>(null);

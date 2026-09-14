@@ -71,9 +71,14 @@ export async function getPostageQuotes(input: GetPostageQuotesInput): Promise<Po
     originPostcode: input.originPostcode,
     excludeTags: EXCLUDED_TAGS,
   });
-  if (input.lengthCm !== undefined) params.set('length', String(input.lengthCm));
-  if (input.widthCm !== undefined) params.set('width', String(input.widthCm));
-  if (input.heightCm !== undefined) params.set('height', String(input.heightCm));
+  // Parcel2Go's quote endpoint 400s on a decimal length/width/height
+  // (confirmed live, 2026-09-14: "8.4" fails, "8" succeeds) -- the
+  // dimensions AI stage estimates in fractional cm, so round up rather
+  // than truncate, since underselling a dimension risks quietly
+  // recommending a service the item wouldn't actually fit in.
+  if (input.lengthCm !== undefined) params.set('length', String(Math.ceil(input.lengthCm)));
+  if (input.widthCm !== undefined) params.set('width', String(Math.ceil(input.widthCm)));
+  if (input.heightCm !== undefined) params.set('height', String(Math.ceil(input.heightCm)));
 
   const response = await fetch(`${API_BASE}/quoting/quote/shipments/GBR/GBR?${params}`, {
     headers: { Accept: 'application/json' },
